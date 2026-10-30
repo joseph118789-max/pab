@@ -14,11 +14,10 @@ run_app = typer.Typer(help="Unified provider agent launch")
 console = Console()
 
 
-@run_app.callback(invoke_without_command=True)
-def run_agent(
-    agent_id: str = typer.Argument(..., help="Agent ID to run"),
-    provider_name: str = typer.Option("openclaw", "--provider", "-p", help="Target provider (openclaw|agy|codex|claude)"),
-    handoff_session: Optional[str] = typer.Option(None, "--with-handoff", help="Optional session ID to inject handoff context before launch"),
+def execute_run(
+    agent_id: str,
+    provider_name: str = "openclaw",
+    handoff_session: Optional[str] = None,
 ):
     """Launch an agent through the specified provider platform."""
     config = ConfigManager()
@@ -55,3 +54,12 @@ def run_agent(
     console.print(f"[bold green]Ready to launch '{agent_profile.agent.name}' on {provider.display_name}![/bold green]")
     console.print(f"Platform: {provider.display_name} (Version: {provider.version() or 'Detected'})")
     console.print(f"Agent: {agent_profile.agent.name} (Role: {agent_profile.agent.identity.role})")
+
+
+@run_app.command("agent")
+def run_agent_cmd(
+    agent_id: str = typer.Argument(..., help="Agent ID to run"),
+    provider_name: str = typer.Option("openclaw", "--provider", "-p", help="Target provider (openclaw|agy|codex|claude)"),
+    handoff_session: Optional[str] = typer.Option(None, "--with-handoff", help="Optional session ID to inject handoff context before launch"),
+):
+    execute_run(agent_id, provider_name, handoff_session)

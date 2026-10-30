@@ -34,7 +34,17 @@ app.add_typer(memory_app, name="memory")
 app.add_typer(session_app, name="session")
 app.add_typer(sync_app, name="sync")
 app.add_typer(backup_app, name="backup")
-app.add_typer(run_app, name="run")
+
+
+@app.command("run")
+def run_cli_command(
+    agent_id: str = typer.Argument(..., help="Agent ID to run"),
+    provider: str = typer.Option("openclaw", "--provider", "-p", help="Target provider (openclaw|agy|codex|claude)"),
+    with_handoff: Optional[str] = typer.Option(None, "--with-handoff", help="Optional session ID to inject handoff context before launch"),
+):
+    """Launch an agent through the specified provider platform."""
+    from pab.cli.run import execute_run
+    execute_run(agent_id, provider, with_handoff)
 
 personaos_app = typer.Typer(help="PersonaOS worker profile integration")
 
