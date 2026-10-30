@@ -96,3 +96,8 @@ class AgentProvider(ABC):
     def validate(self, definition: CanonicalAgentDefinition) -> List[str]:
         """Validate whether provider supports all specified agent fields. Returns warnings."""
         pass
+
+    @abstractmethod
+    def export_canonical_agent(self, agent_id: str) -> Optional[CanonicalAgentDefinition]:
+        """Import a native agent definition from this provider and convert it into a CanonicalAgentDefinition."""
+        pass

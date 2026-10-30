@@ -282,3 +282,36 @@ class AgentRegistry:
                 results[p_name] = {"success": False, "error": str(e), "warnings": warnings}
 
         return results
+
+    def import_native_agent(
+        self,
+        provider_name: str,
+        agent_id: str,
+        target_id: Optional[str] = None,
+    ) -> CanonicalAgentProfile:
+        """Import an existing native agent from a provider into the canonical registry."""
+        provider = self.providers.get(provider_name.lower())
+        if not provider:
+            raise AgentValidationError(f"Provider '{provider_name}' not supported or found.")
+
+        definition = provider.export_canonical_agent(agent_id)
+        if not definition:
+            raise AgentNotFoundError(f"Agent '{agent_id}' could not be found or loaded from {provider.display_name}.")
+
+        if target_id:
+            definition.id = target_id
+
+        existing = self.get_agent(definition.id)
+        if existing:
+            profile = self.update_agent(definition, commit_message=f"Imported update from {provider_name}")
+        else:
+            profile = self.create_agent(definition)
+
+        self.db.record_audit(
+            event_type="import_native_agent",
+            resource_type="agent",
+            resource_id=definition.id,
+            provider=provider_name,
+            details={"original_id": agent_id},
+        )
+        return profile

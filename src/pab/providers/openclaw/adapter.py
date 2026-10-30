@@ -131,3 +131,7 @@ class OpenClawAdapter(AgentProvider):
                 f"OpenClaw does not have a native reasoning_effort flag: '{definition.preferences.reasoning_effort}' will be ignored."
             )
         return warnings
+
+    def export_canonical_agent(self, agent_id: str) -> Optional[CanonicalAgentDefinition]:
+        from pab.providers.openclaw.agents import import_openclaw_agent
+        return import_openclaw_agent(agent_id, self._home)

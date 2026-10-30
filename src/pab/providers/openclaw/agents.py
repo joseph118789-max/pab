@@ -177,3 +177,130 @@ def delete_openclaw_agent(agent_id: str, home_dir: Optional[Path] = None, prune_
         deleted = True
 
     return deleted
+
+
+def import_openclaw_agent(
+    agent_id: str,
+    home_dir: Optional[Path] = None,
+) -> Optional[CanonicalAgentDefinition]:
+    """Import an existing OpenClaw agent and convert it into a CanonicalAgentDefinition."""
+    from pab.core.models.agent import (
+        AgentCapabilities,
+        AgentIdentity,
+        AgentInstructions,
+        AgentPermissions,
+        AgentPreferences,
+        AgentToolCapabilities,
+        ProviderConfig,
+    )
+
+    home = home_dir or get_openclaw_home()
+    cfg = read_openclaw_json(home / "openclaw.json")
+    entries = cfg.get("agents", {}).get("entries", {})
+    entry = entries.get(agent_id, {})
+
+    # Determine workspace directory
+    workspace_path = None
+    if entry.get("workspace"):
+        workspace_path = Path(entry["workspace"]).expanduser().resolve()
+    elif agent_id == "main":
+        workspace_path = (home / "workspace").resolve()
+    elif (home / "agents" / agent_id).is_dir():
+        workspace_path = (home / "agents" / agent_id).resolve()
+
+    if not workspace_path or not workspace_path.is_dir():
+        return None
+
+    # Read workspace identity files
+    identity_file = workspace_path / "IDENTITY.md"
+    soul_file = workspace_path / "SOUL.md"
+    user_file = workspace_path / "USER.md"
+    agents_file = workspace_path / "AGENTS.md"
+
+    name = entry.get("name")
+    avatar_emoji = entry.get("identity", {}).get("emoji", "🦞")
+    role = "General Assistant & Coordinator"
+    persona = ""
+    vibe = "Resourceful, opinionated, genuinely helpful"
+
+    if identity_file.is_file():
+        id_text = identity_file.read_text(encoding="utf-8")
+        import re
+        for line in id_text.splitlines():
+            line_str = line.strip()
+            m_name = re.search(r"-\s*\*\*Name:\*\*\s*(.*)", line_str)
+            if m_name and m_name.group(1).strip().strip("_()"):
+                name = m_name.group(1).strip().strip("_()")
+            m_emoji = re.search(r"-\s*\*\*Emoji:\*\*\s*(.*)", line_str)
+            if m_emoji and m_emoji.group(1).strip().strip("_()"):
+                avatar_emoji = m_emoji.group(1).strip().strip("_()")
+            m_creature = re.search(r"-\s*\*\*Creature:\*\*\s*(.*)", line_str)
+            if m_creature and m_creature.group(1).strip().strip("_()"):
+                role = m_creature.group(1).strip().strip("_()")
+            m_vibe = re.search(r"-\s*\*\*Vibe:\*\*\s*(.*)", line_str)
+            if m_vibe and m_vibe.group(1).strip().strip("_()"):
+                vibe = m_vibe.group(1).strip().strip("_()")
+
+    soul_text = ""
+    if soul_file.is_file():
+        soul_text = soul_file.read_text(encoding="utf-8")
+        persona = soul_text[:300].strip()
+
+    agents_text = ""
+    if agents_file.is_file():
+        agents_text = agents_file.read_text(encoding="utf-8")
+
+    # Discover skills in workspace
+    skills = list(entry.get("skills", []))
+    ws_skills_dir = workspace_path / "skills"
+    if ws_skills_dir.is_dir():
+        for sd in ws_skills_dir.iterdir():
+            if sd.is_dir() and (sd / "SKILL.md").is_file() and sd.name not in skills and not sd.name.startswith("."):
+                skills.append(sd.name)
+
+    model = entry.get("model") or cfg.get("models", {}).get("default") or "minimax-portal/MiniMax-M2.7"
+    display_name = name or ("OpenClaw Main" if agent_id == "main" else agent_id.capitalize())
+
+    definition = CanonicalAgentDefinition(
+        id=agent_id,
+        name=display_name,
+        description=f"Imported OpenClaw {agent_id} agent from workspace {workspace_path}",
+        version="1.0.0",
+        identity=AgentIdentity(
+            role=role,
+            persona=persona or f"OpenClaw {agent_id} agent",
+            objective=f"Autonomous assistance and workspace management for OpenClaw {agent_id}",
+            avatar_emoji=avatar_emoji,
+            style=vibe,
+        ),
+        instructions=AgentInstructions(
+            system_prompt=agents_text or f"You are {display_name}, managing {workspace_path}",
+            soul_prompt=soul_text if soul_file.is_file() else None,
+            user_prompt=user_file.read_text(encoding="utf-8") if user_file.is_file() else None,
+        ),
+        capabilities=AgentCapabilities(
+            skills=skills,
+            tools=AgentToolCapabilities(allowed=["read", "search", "terminal", "file_edit"]),
+        ),
+        preferences=AgentPreferences(
+            model=model,
+            response_style="technical",
+        ),
+        permissions=AgentPermissions(
+            filesystem="workspace",
+            shell_execution="approval_required",
+            network="restricted",
+        ),
+        providers={
+            "openclaw": ProviderConfig(
+                enabled=True,
+                workspace=str(workspace_path),
+                model=model,
+            )
+        },
+        metadata={
+            "imported_from": "openclaw",
+            "original_workspace": str(workspace_path),
+        },
+    )
+    return definition

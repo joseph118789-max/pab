@@ -98,3 +98,29 @@ def test_agent_deploy_all_providers(
     claude_content = claude_file.read_text("utf-8")
     assert "name: devops-engineer" in claude_content
     assert "tools:" in claude_content
+
+
+def test_import_openclaw_native_agent(tmp_path: Path, config_mgr: ConfigManager):
+    from pab.providers.openclaw.agents import import_openclaw_agent
+    # Setup mock openclaw home
+    oc_home = tmp_path / "openclaw_root"
+    ws = oc_home / "workspace"
+    ws.mkdir(parents=True)
+    (ws / "IDENTITY.md").write_text("# IDENTITY.md\n- **Name:** Lobster Master\n- **Emoji:** 🦞\n- **Creature:** Crustacean\n", encoding="utf-8")
+    (ws / "SOUL.md").write_text("# SOUL.md\nBe resourceful and helpful.\n", encoding="utf-8")
+    (ws / "AGENTS.md").write_text("# AGENTS.md\nWorkspace guidelines.\n", encoding="utf-8")
+    (ws / "skills").mkdir()
+    (ws / "skills" / "docker-test").mkdir()
+    (ws / "skills" / "docker-test" / "SKILL.md").write_text("---\nname: docker-test\ndescription: Docker skill test\n---\n", encoding="utf-8")
+
+    import json
+    cfg = {"agents": {"entries": {"main": {"model": "test-model", "workspace": str(ws)}}}}
+    (oc_home / "openclaw.json").write_text(json.dumps(cfg), encoding="utf-8")
+
+    agent_def = import_openclaw_agent("main", home_dir=oc_home)
+    assert agent_def is not None
+    assert agent_def.id == "main"
+    assert agent_def.name == "Lobster Master"
+    assert agent_def.identity.avatar_emoji == "🦞"
+    assert "docker-test" in agent_def.capabilities.skills
+    assert agent_def.preferences.model == "test-model"

@@ -103,6 +103,31 @@ def create_agent(
         raise typer.Exit(1)
 
 
+@agent_app.command("import")
+def import_agent(
+    agent_id: str = typer.Argument(..., help="Agent ID on the provider (e.g. 'main', 'devops')"),
+    provider: str = typer.Option("openclaw", "--from", "-f", help="Source provider platform (openclaw|agy|codex|claude)"),
+    target_id: Optional[str] = typer.Option(None, "--as", help="Optional new canonical agent ID"),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+):
+    """Import an existing native agent from a provider into the canonical PAB registry."""
+    reg = AgentRegistry()
+    try:
+        profile = reg.import_native_agent(provider, agent_id, target_id=target_id)
+        if as_json:
+            console.print(json.dumps(profile.model_dump(mode="json"), indent=2))
+            return
+        console.print(f"[green]Successfully imported native agent into canonical registry:[/green] [bold]{profile.agent.name}[/bold] ({profile.agent.id})")
+        console.print(f"Role: {profile.agent.identity.role}")
+        if profile.agent.capabilities.skills:
+            console.print(f"Skills ({len(profile.agent.capabilities.skills)}): {', '.join(profile.agent.capabilities.skills[:6])}...")
+        console.print(f"Model: {profile.agent.preferences.model}")
+        console.print(f"Source Platform: {provider}")
+    except Exception as e:
+        console.print(f"[red]Import failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
 @agent_app.command("clone")
 def clone_agent(
     source_id: str = typer.Argument(..., help="Source agent ID"),

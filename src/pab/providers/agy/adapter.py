@@ -127,3 +127,16 @@ class AgyAdapter(AgentProvider):
                 f"Antigravity CLI expects effort to be low|medium|high|xhigh|max. Found: '{definition.preferences.reasoning_effort}'"
             )
         return warnings
+
+    def export_canonical_agent(self, agent_id: str) -> Optional[CanonicalAgentDefinition]:
+        ag = self.get_agent(agent_id)
+        if not ag or not ag.get("path"):
+            return None
+        from pab.core.models.agent import AgentIdentity, AgentInstructions
+        return CanonicalAgentDefinition(
+            id=agent_id,
+            name=ag.get("name", agent_id),
+            description=ag.get("description", ""),
+            identity=AgentIdentity(role=ag.get("name", agent_id)),
+            instructions=AgentInstructions(),
+        )
