@@ -47,26 +47,27 @@ def install_claude_skill(
     home_dir: Optional[Path] = None,
     workspace_root: Optional[Path] = None,
 ) -> bool:
+    target_dirs = []
     if workspace_root:
-        target_dir = workspace_root / ".claude" / "skills" / skill.manifest.name
-    else:
-        home = home_dir or get_claude_home()
-        target_dir = home / "skills" / skill.manifest.name
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-    skill_md = target_dir / "SKILL.md"
+        target_dirs.append(workspace_root / ".claude" / "skills" / skill.manifest.name)
+    home = home_dir or get_claude_home()
+    target_dirs.append(home / "skills" / skill.manifest.name)
 
     frontmatter = yaml.safe_dump(skill.manifest.model_dump(), sort_keys=False)
     content = f"---\n{frontmatter}---\n\n{skill.body}\n"
-    skill_md.write_text(content, encoding="utf-8")
 
-    if skill.source_path:
-        src = Path(skill.source_path)
-        for folder in ["scripts", "references", "assets"]:
-            s_folder = src / folder
-            if s_folder.is_dir():
-                d_folder = target_dir / folder
-                shutil.copytree(s_folder, d_folder, dirs_exist_ok=True)
+    for target_dir in target_dirs:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        skill_md = target_dir / "SKILL.md"
+        skill_md.write_text(content, encoding="utf-8")
+
+        if skill.source_path:
+            src = Path(skill.source_path)
+            for folder in ["scripts", "references", "assets"]:
+                s_folder = src / folder
+                if s_folder.is_dir():
+                    d_folder = target_dir / folder
+                    shutil.copytree(s_folder, d_folder, dirs_exist_ok=True)
     return True
 
 

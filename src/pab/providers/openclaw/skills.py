@@ -55,27 +55,30 @@ def install_openclaw_skill(
     home_dir: Optional[Path] = None,
 ) -> bool:
     home = home_dir or get_openclaw_home()
+    target_dirs = []
     if agent_id:
-        target_dir = home / "agents" / agent_id / "skills" / skill.manifest.name
+        target_dirs.append(home / "agents" / agent_id / "skills" / skill.manifest.name)
     else:
-        target_dir = home / "plugin-skills" / skill.manifest.name
+        target_dirs.append(home / "plugin-skills" / skill.manifest.name)
+        workspace_skills = home / "workspace" / "skills"
+        if workspace_skills.is_dir():
+            target_dirs.append(workspace_skills / skill.manifest.name)
 
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    # Write SKILL.md
-    skill_md = target_dir / "SKILL.md"
     frontmatter = yaml.safe_dump(skill.manifest.model_dump(), sort_keys=False)
     content = f"---\n{frontmatter}---\n\n{skill.body}\n"
-    skill_md.write_text(content, encoding="utf-8")
 
-    # Copy scripts, references, assets if source_path is present
-    if skill.source_path:
-        src = Path(skill.source_path)
-        for folder in ["scripts", "references", "assets"]:
-            s_folder = src / folder
-            if s_folder.is_dir():
-                d_folder = target_dir / folder
-                shutil.copytree(s_folder, d_folder, dirs_exist_ok=True)
+    for target_dir in target_dirs:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        skill_md = target_dir / "SKILL.md"
+        skill_md.write_text(content, encoding="utf-8")
+
+        if skill.source_path:
+            src = Path(skill.source_path)
+            for folder in ["scripts", "references", "assets"]:
+                s_folder = src / folder
+                if s_folder.is_dir():
+                    d_folder = target_dir / folder
+                    shutil.copytree(s_folder, d_folder, dirs_exist_ok=True)
     return True
 
 

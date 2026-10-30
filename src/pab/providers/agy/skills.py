@@ -58,26 +58,27 @@ def install_agy_skill(
     config_dir: Optional[Path] = None,
     workspace_root: Optional[Path] = None,
 ) -> bool:
+    target_dirs = []
     if workspace_root:
-        target_dir = workspace_root / ".agents" / "skills" / skill.manifest.name
-    else:
-        cfg = config_dir or get_agy_config_dir()
-        target_dir = cfg / "skills" / skill.manifest.name
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-    skill_md = target_dir / "SKILL.md"
+        target_dirs.append(workspace_root / ".agents" / "skills" / skill.manifest.name)
+    cfg = config_dir or get_agy_config_dir()
+    target_dirs.append(cfg / "skills" / skill.manifest.name)
 
     frontmatter = yaml.safe_dump(skill.manifest.model_dump(), sort_keys=False)
     content = f"---\n{frontmatter}---\n\n{skill.body}\n"
-    skill_md.write_text(content, encoding="utf-8")
 
-    if skill.source_path:
-        src = Path(skill.source_path)
-        for folder in ["scripts", "references", "assets"]:
-            s_folder = src / folder
-            if s_folder.is_dir():
-                d_folder = target_dir / folder
-                shutil.copytree(s_folder, d_folder, dirs_exist_ok=True)
+    for target_dir in target_dirs:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        skill_md = target_dir / "SKILL.md"
+        skill_md.write_text(content, encoding="utf-8")
+
+        if skill.source_path:
+            src = Path(skill.source_path)
+            for folder in ["scripts", "references", "assets"]:
+                s_folder = src / folder
+                if s_folder.is_dir():
+                    d_folder = target_dir / folder
+                    shutil.copytree(s_folder, d_folder, dirs_exist_ok=True)
     return True
 
 
