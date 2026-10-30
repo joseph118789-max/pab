@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personaos-agent-bridge"
+version = "0.1.0"
+description = "Universal AI Agent Manager across OpenClaw, Antigravity, Codex, and Claude Code"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "PersonaOS Core Team" }
+]
+dependencies = [
+    "typer>=0.12.0",
+    "rich>=13.7.0",
+    "pydantic>=2.5.0",
+    "pyyaml>=6.0.1",
+    "tomlkit>=0.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+pab = "pab.cli.main:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
