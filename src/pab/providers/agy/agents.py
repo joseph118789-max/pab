@@ -64,14 +64,11 @@ def compile_agy_agent(
     workspace_root: Optional[Path] = None,
 ) -> Dict[str, Any]:
     agent_id = definition.id
+    target_dirs = []
     if workspace_root:
-        target_dir = workspace_root / ".agents" / "agents" / agent_id
-    else:
-        cfg = config_dir or get_agy_config_dir()
-        target_dir = cfg / "agents" / agent_id
-
-    target_dir.mkdir(parents=True, exist_ok=True)
-    agent_md = target_dir / "agent.md"
+        target_dirs.append(workspace_root / ".agents" / "agents" / agent_id)
+    cfg = config_dir or get_agy_config_dir()
+    target_dirs.append(cfg / "agents" / agent_id)
 
     frontmatter = {
         "name": definition.id,
@@ -95,12 +92,18 @@ def compile_agy_agent(
     )
 
     content = f"---\n{yaml.safe_dump(frontmatter, sort_keys=False)}---\n\n{body}\n"
-    agent_md.write_text(content, encoding="utf-8")
+
+    last_md = None
+    for target_dir in target_dirs:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        agent_md = target_dir / "agent.md"
+        agent_md.write_text(content, encoding="utf-8")
+        last_md = agent_md
 
     return {
         "id": agent_id,
         "name": definition.name,
-        "path": str(agent_md),
+        "path": str(last_md),
         "status": "deployed",
     }
 
