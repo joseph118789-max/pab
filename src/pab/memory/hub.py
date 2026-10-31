@@ -116,6 +116,12 @@ class MemoryHub:
         elif provider_name == "agy":
             from pab.providers.agy.memory import list_agy_memories
             imported_items = list_agy_memories()
+        elif provider_name == "dsh":
+            from pab.providers.dsh.memory import list_dsh_memories
+            imported_items = list_dsh_memories()
+        elif provider_name == "pi":
+            from pab.providers.pi.memory import list_pi_memories
+            imported_items = list_pi_memories()
 
         added = 0
         skipped = 0

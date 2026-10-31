@@ -183,6 +183,38 @@ def switch_to_minimax(
     _execute_provider_switch("minimax", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
 
 
+@app.command("dsh", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_dsh(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to DeepSeek Shell (DSH) from another provider, or launch dsh directly."""
+    _execute_provider_switch("dsh", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
+
+
+@app.command("pi", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_pi(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to Pi Coding Agent (pi) from another provider, or launch pi directly."""
+    _execute_provider_switch("pi", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
+
+
 @app.command("run")
 def run_cli_command(
     agent_id: str = typer.Argument(..., help="Agent ID to run"),

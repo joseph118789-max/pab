@@ -16,6 +16,8 @@ def resolve_provider_bin(provider_name: str) -> Optional[str]:
         "codex": ["codex"],
         "claude": ["claude"],
         "minimax": ["mcode", "minimax"],
+        "dsh": ["dsh"],
+        "pi": ["pi"],
     }
     candidates = bin_map.get(provider_name.lower(), [provider_name])
     for cand in candidates:
@@ -54,6 +56,12 @@ def build_launch_command(
             cmd.extend(["--prompt", handoff_instruction])
     elif p == "openclaw":
         pass
+    elif p == "pi":
+        if handoff_instruction and not any(arg in extra for arg in ["-p", "--print"]):
+            cmd.extend(["-p", handoff_instruction])
+    elif p == "dsh":
+        if handoff_instruction and not any(arg in extra for arg in ["headless", "tui", "web"]):
+            cmd.extend(["headless", handoff_instruction])
 
     # Append any user pass-through args
     cmd.extend(extra)

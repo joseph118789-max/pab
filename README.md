@@ -8,6 +8,9 @@ PersonaOS Agent Bridge (PAB) is a local-first universal control plane for creati
 - 🌐 **Google Antigravity CLI (`agy`)** (DeepMind runtime, `agent.md`, progressive disclosure skills)
 - 💻 **OpenAI Codex CLI** (TOML custom-agent profiles, system skills, execution logs)
 - 🧠 **Anthropic Claude Code** (Subagent Markdown frontmatter, `CLAUDE.md`, project memory)
+- ⚡ **MiniMax Coding CLI (`mcode`)** (High-throughput coding agent, Markdown agents, skills)
+- 🚀 **DeepSeek Shell (`dsh`)** (DeepSeek Harness, modular cordis profiles, skill registry)
+- 🥧 **Pi Coding Agent (`pi`)** (Minimalist extensible harness, tree sessions, native `AGENTS.md`)
 
 Instead of locking agent identities, prompt engineering, skills, and memory into a single vendor's proprietary runtime, PAB maintains a **canonical single source of truth** and compiles configurations into each platform's native format.
 
@@ -245,6 +248,9 @@ pab personaos sync --dir /root/projects/PersonaOS/profiles --to all
 | **Antigravity (`agy`)** | `.agents/agents/<id>/agent.md`<br>`~/.gemini/config/agents/` | `.agents/skills/<id>/`<br>`~/.gemini/config/skills/` | `GEMINI.md`<br>`AGENTS.md` |
 | **OpenAI Codex** | `~/.codex/agents/<id>.toml` | `.agents/skills/<id>/`<br>`~/.codex/skills/` | `AGENTS.md` |
 | **Anthropic Claude Code** | `~/.claude/agents/<id>.md`<br>`.claude/agents/<id>.md` | `.claude/skills/<id>/`<br>`~/.claude/skills/` | `CLAUDE.md` |
+| **MiniMax (`mcode`)** | `~/.minimax/agents/<id>/`<br>`.minimax/agents/<id>/` | `~/.minimax/skills/<id>/`<br>`.minimax/skills/<id>/` | `AGENTS.md` |
+| **DeepSeek Shell (`dsh`)** | `~/.dsh/profiles/<id>/`<br>`.dsh/agents/<id>/` | `~/.dsh/skills/<id>/`<br>`.dsh/skills/<id>/` | `AGENTS.md`<br>`DEEPSEEK.md` |
+| **Pi Coding Agent (`pi`)** | `~/.pi/agent/agents/<id>.json`<br>`.pi/agents/` | `~/.pi/agent/skills/<id>/`<br>`.pi/skills/` | `AGENTS.md`<br>`CLAUDE.md` |
 
 ---
 

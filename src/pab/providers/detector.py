@@ -6,8 +6,10 @@ from pab.providers.agy.adapter import AgyAdapter
 from pab.providers.base import AgentProvider
 from pab.providers.claude.adapter import ClaudeAdapter
 from pab.providers.codex.adapter import CodexAdapter
+from pab.providers.dsh.adapter import DshAdapter
 from pab.providers.minimax.adapter import MinimaxAdapter
 from pab.providers.openclaw.adapter import OpenClawAdapter
+from pab.providers.pi.adapter import PiAdapter
 
 
 class ProviderRegistry:
@@ -21,6 +23,8 @@ class ProviderRegistry:
             "codex": CodexAdapter(workspace_root=workspace_root),
             "claude": ClaudeAdapter(workspace_root=workspace_root),
             "minimax": MinimaxAdapter(workspace_root=workspace_root),
+            "dsh": DshAdapter(workspace_root=workspace_root),
+            "pi": PiAdapter(workspace_root=workspace_root),
         }
 
     def get(self, name: str) -> Optional[AgentProvider]:

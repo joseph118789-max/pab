@@ -200,6 +200,16 @@ def test_cli_switch_dry_run_and_passthrough():
     assert result_claude.exit_code == 0
     assert "Switching from openclaw ➔ claude" in result_claude.output
 
+    # pab pi --from dsh --dry-run
+    result_pi = runner.invoke(app, ["pi", "--from", "dsh", "--dry-run"])
+    assert result_pi.exit_code == 0
+    assert "Switching from dsh ➔ pi" in result_pi.output
+
+    # pab dsh --from pi --dry-run -- --profile headless
+    result_dsh = runner.invoke(app, ["dsh", "--from", "pi", "--dry-run", "--", "--profile", "headless"])
+    assert result_dsh.exit_code == 0
+    assert "Switching from pi ➔ dsh" in result_dsh.output
+
 
 def test_cli_switch_history_and_inspect():
     """Test CLI switch history and inspect commands."""

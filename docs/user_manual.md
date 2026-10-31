@@ -8,11 +8,14 @@
 ### What is PersonaOS Agent Bridge (PAB)?
 **PersonaOS Agent Bridge (PAB)** is a local-first universal control plane for creating, configuring, sharing, migrating, and managing AI agents across heterogeneous development environments. 
 
-Rather than locking your autonomous agents, skills, and memory into a single vendor's ecosystem, PAB maintains a **canonical single source of truth** and compiles configurations into the native formats of four primary AI agent platforms:
+Rather than locking your autonomous agents, skills, and memory into a single vendor's ecosystem, PAB maintains a **canonical single source of truth** and compiles configurations into the native formats of supported AI agent platforms:
 1. **OpenClaw** (Multi-channel AI agent gateway, workspaces, daily memory)
 2. **Google Antigravity CLI (`agy`)** (Google DeepMind agent runtime, `agent.md`, progressive disclosure skills)
 3. **OpenAI Codex CLI** (TOML custom-agent profiles, system skills, execution logs)
 4. **Anthropic Claude Code** (Subagent Markdown frontmatter, `CLAUDE.md`, project memory)
+5. **MiniMax Coding CLI (`mcode`)** (High-throughput coding agent, Markdown agents, skills)
+6. **DeepSeek Shell (`dsh`)** (DeepSeek Harness, modular cordis profiles, skill registry)
+7. **Pi Coding Agent (`pi`)** (Minimalist extensible harness, tree sessions, native `AGENTS.md`)
 
 ---
 
@@ -247,6 +250,12 @@ pab claude --from openclaw
 
 # Switch to OpenClaw from Codex
 pab openclaw --from codex
+
+# Switch to Pi Coding Agent from Claude
+pab pi --from claude
+
+# Switch to DeepSeek Shell from Pi
+pab dsh --from pi
 ```
 
 #### Additional Options & Pass-Through Arguments

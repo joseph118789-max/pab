@@ -61,6 +61,8 @@ def test_agent_deploy_all_providers(
     from pab.providers.agy.agents import compile_agy_agent
     from pab.providers.codex.agents import compile_codex_agent
     from pab.providers.claude.agents import compile_claude_agent
+    from pab.providers.dsh.agents import compile_dsh_agent
+    from pab.providers.pi.agents import compile_pi_agent
 
     # 1. Deploy OpenClaw
     oc_res = compile_openclaw_agent(sample_agent_def, home_dir=oc_home)
@@ -98,6 +100,21 @@ def test_agent_deploy_all_providers(
     claude_content = claude_file.read_text("utf-8")
     assert "name: devops-engineer" in claude_content
     assert "tools:" in claude_content
+
+    # 5. Deploy DSH
+    dsh_home = tmp_path / "mock_dsh"
+    dsh_res = compile_dsh_agent(sample_agent_def, home_dir=dsh_home)
+    dsh_dir = Path(dsh_res["path"])
+    assert dsh_dir.is_dir()
+    assert (dsh_dir / "cordis.patch.yml").is_file()
+    assert (dsh_dir / "package.json").is_file()
+
+    # 6. Deploy Pi
+    pi_home = tmp_path / "mock_pi"
+    pi_res = compile_pi_agent(sample_agent_def, home_dir=pi_home)
+    pi_file = Path(pi_res["path"])
+    assert pi_file.is_file()
+    assert "devops-engineer" in pi_file.read_text("utf-8")
 
 
 def test_import_openclaw_native_agent(tmp_path: Path, config_mgr: ConfigManager):

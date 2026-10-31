@@ -307,6 +307,10 @@ class SwitchEngine:
                     (project_dir / "CLAUDE.md").write_text(inst_content, encoding="utf-8")
                 elif plan.destination_provider == "agy" and not (project_dir / "GEMINI.md").exists():
                     (project_dir / "GEMINI.md").write_text(inst_content, encoding="utf-8")
+                elif plan.destination_provider == "dsh" and not (project_dir / "DEEPSEEK.md").exists():
+                    (project_dir / "DEEPSEEK.md").write_text(inst_content, encoding="utf-8")
+                elif plan.destination_provider == "pi" and not (project_dir / "AGENTS.md").exists():
+                    (project_dir / "AGENTS.md").write_text(inst_content, encoding="utf-8")
 
         # Step 6: Generate HANDOFF.md and manifest
         handoff_md_content = self._render_handoff_markdown(
