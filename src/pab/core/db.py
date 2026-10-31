@@ -112,6 +112,25 @@ class Database:
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS switch_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    handoff_id TEXT NOT NULL UNIQUE,
+                    source_provider TEXT NOT NULL,
+                    target_provider TEXT NOT NULL,
+                    source_session_id TEXT,
+                    source_agent_id TEXT,
+                    project_path TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    skills_synced_json TEXT,
+                    warnings_json TEXT,
+                    manifest_json TEXT,
+                    launched INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
             conn.commit()
 
     def record_audit(
@@ -149,3 +168,51 @@ class Database:
                 (limit,),
             )
             return [dict(row) for row in cursor.fetchall()]
+
+    def record_switch(self, record: Dict[str, Any]) -> None:
+        """Insert or update a switch history entry."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT OR REPLACE INTO switch_history (
+                    handoff_id, source_provider, target_provider, source_session_id,
+                    source_agent_id, project_path, mode, skills_synced_json,
+                    warnings_json, manifest_json, launched, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record["handoff_id"],
+                    record["source_provider"],
+                    record["target_provider"],
+                    record.get("source_session_id"),
+                    record.get("source_agent_id"),
+                    record["project_path"],
+                    record.get("mode", "handoff"),
+                    json.dumps(record.get("skills_synced", [])),
+                    json.dumps(record.get("warnings", [])),
+                    json.dumps(record.get("manifest", {})),
+                    1 if record.get("launched") else 0,
+                    record.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            conn.commit()
+
+    def get_switch_history(self, limit: int = 50) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM switch_history ORDER BY id DESC LIMIT ?",
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_switch_by_handoff(self, handoff_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM switch_history WHERE handoff_id = ?",
+                (handoff_id,),
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else None

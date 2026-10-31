@@ -225,6 +225,73 @@ pab personaos import /root/projects/PersonaOS/profiles/worker-devops-001/v1.yaml
 pab personaos sync --dir /root/projects/PersonaOS/profiles --to all
 ```
 
+### J. One-Command Agent Switching & Session Handoff
+
+Switch seamlessly between OpenClaw, Google Antigravity (`agy`), OpenAI Codex, and Anthropic Claude Code with a single command. Automatically extracts working context, discovers the relevant session, synchronises skills and instructions, builds a portable handoff package (`.pab/handoffs/<id>/`), and launches the destination native CLI.
+
+#### Primary Syntax
+```bash
+pab <target-agent> --from <source-agent>
+```
+
+#### Examples
+```bash
+# Switch to Codex from Claude Code
+pab codex --from claude
+
+# Switch to Antigravity CLI from Codex
+pab agy --from codex
+
+# Switch to Claude Code from OpenClaw
+pab claude --from openclaw
+
+# Switch to OpenClaw from Codex
+pab openclaw --from codex
+```
+
+#### Additional Options & Pass-Through Arguments
+```bash
+# Switch using specific session or latest project session
+pab codex --from claude --session latest
+pab codex --from claude --session <session-id>
+
+# Switch modes: handoff (default), clone (replicate identity), or skills-only
+pab codex --from claude --mode handoff
+pab codex --from claude --mode clone
+pab codex --from claude --mode skills-only
+
+# Target specific project directory or agent
+pab codex --from claude --project /path/to/project --agent devops
+
+# Selectively skip skills or memory
+pab codex --from claude --no-skills
+pab codex --from claude --no-memory
+
+# Dry-run migration plan without spawning native CLI
+pab codex --from claude --dry-run
+
+# Direct launch without migration
+pab codex
+pab claude
+pab agy
+pab openclaw
+
+# Native argument pass-through (separated by --)
+pab codex --from claude -- --full-auto
+```
+
+#### Switching State, History & Rollback
+```bash
+# View complete switching history
+pab switch history
+
+# Inspect handoff manifest, file hashes, and context
+pab switch inspect <handoff-id>
+
+# Roll back PAB-managed handoff configuration safely
+pab switch rollback <handoff-id>
+```
+
 ---
 
 ## 5. Security & Isolation Model

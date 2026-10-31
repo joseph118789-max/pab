@@ -315,3 +315,41 @@ class AgentRegistry:
             details={"original_id": agent_id},
         )
         return profile
+
+    def migrate_agent(
+        self,
+        agent_id: str,
+        source_provider: str,
+        target_providers: List[str],
+        target_id: Optional[str] = None,
+        with_skills: bool = True,
+    ) -> Dict[str, Any]:
+        """One-step migration: Import from source platform and deploy to target platform(s)."""
+        profile = self.import_native_agent(source_provider, agent_id, target_id=target_id)
+
+        # Deploy associated skills if present
+        if with_skills and profile.agent.capabilities.skills:
+            from pab.skills.manager import SkillManager
+            sm = SkillManager(self.config)
+            for sname in profile.agent.capabilities.skills:
+                try:
+                    sm.deploy_skill(sname, target_providers)
+                except Exception:
+                    pass
+
+        deploy_results = self.deploy_agent(profile.agent.id, target_providers)
+        self.db.record_audit(
+            event_type="migrate_agent",
+            resource_type="agent",
+            resource_id=profile.agent.id,
+            provider=source_provider,
+            details={
+                "source": source_provider,
+                "targets": target_providers,
+                "with_skills": with_skills,
+            },
+        )
+        return {
+            "agent": profile,
+            "deploy_results": deploy_results,
+        }

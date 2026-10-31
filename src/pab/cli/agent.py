@@ -128,6 +128,50 @@ def import_agent(
         raise typer.Exit(1)
 
 
+@agent_app.command("migrate")
+def migrate_agent(
+    agent_id: str = typer.Argument(..., help="Agent ID on the source platform"),
+    source: str = typer.Option("openclaw", "--from", "-f", help="Source platform (openclaw|agy|codex|claude)"),
+    target: str = typer.Option("agy", "--to", "-t", help="Target platform (openclaw|agy|codex|claude|all)"),
+    target_id: Optional[str] = typer.Option(None, "--as", help="Optional new agent ID"),
+    with_skills: bool = typer.Option(True, "--with-skills/--no-skills", help="Also deploy associated skills to target"),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+):
+    """One-step migration: Import an agent from a source platform and deploy it directly to a target platform."""
+    reg = AgentRegistry()
+    targets = [t.strip() for t in target.split(",")]
+    try:
+        outcome = reg.migrate_agent(
+            agent_id=agent_id,
+            source_provider=source,
+            target_providers=targets,
+            target_id=target_id,
+            with_skills=with_skills,
+        )
+        if as_json:
+            console.print(json.dumps(outcome, indent=2, default=str))
+            return
+
+        profile = outcome["agent"]
+        deploy_results = outcome["deploy_results"]
+        console.print(f"[green]Successfully migrated agent:[/green] [bold]{profile.agent.name}[/bold] ({profile.agent.id})")
+        console.print(f"  Source: [cyan]{source}[/cyan] ➔ Target: [cyan]{target}[/cyan]")
+        console.print(f"  Role: {profile.agent.identity.role}")
+        console.print(f"  Model: {profile.agent.preferences.model}")
+        if profile.agent.capabilities.skills:
+            console.print(f"  Skills ({len(profile.agent.capabilities.skills)}): {', '.join(profile.agent.capabilities.skills[:6])}...")
+
+        console.print("\n[bold]Deployment Status:[/bold]")
+        for p, r in deploy_results.items():
+            if r.get("success"):
+                console.print(f"  ✅ [green]{p}[/green]: Deployed successfully")
+            else:
+                console.print(f"  ❌ [red]{p}[/red]: Failed - {r.get('error')}")
+    except Exception as e:
+        console.print(f"[red]Migration failed:[/red] {e}")
+        raise typer.Exit(1)
+
+
 @agent_app.command("clone")
 def clone_agent(
     source_id: str = typer.Argument(..., help="Source agent ID"),

@@ -190,7 +190,35 @@ pab run main --provider claude --with-handoff a951ccf1-147d-4e2b-aaf9-46865774aa
 
 ---
 
-### Use Case 5: PersonaOS Worker Pool Onboarding
+### Use Case 5: One-Command Agent Switching & Session Handoff
+
+**The Problem:** You are deep in a development session in Claude Code or OpenClaw, but want to switch to OpenAI Codex or Antigravity (`agy`) to test a different model or specialized tool. Manually exporting history, copy-pasting memory, re-installing skills, and finding the right project folder is tedious and error-prone.
+
+**With PAB:** Switch providers with a single command. PAB automatically discovers the relevant project session, extracts context, synchronises skills with version-conflict protection, builds an isolated handoff package (`.pab/handoffs/<id>/`), and launches the destination native CLI with continuing instructions.
+
+```bash
+# 1. Switch directly between agent CLIs
+pab codex --from claude
+pab agy --from codex
+pab claude --from openclaw
+pab openclaw --from codex
+
+# 2. Pass flags directly through to the destination CLI (using --)
+pab codex --from claude -- --full-auto
+
+# 3. Custom modes (handoff, clone, skills-only) and dry-run verification
+pab codex --from claude --mode handoff --dry-run
+pab agy --from openclaw --mode skills-only
+
+# 4. Audit switching history, inspect bundle manifests, or roll back safely
+pab switch history
+pab switch inspect switch-claude-to-codex-20261031-005110
+pab switch rollback switch-claude-to-codex-20261031-005110
+```
+
+---
+
+### Use Case 6: PersonaOS Worker Pool Onboarding
 
 **The Problem:** Your autonomous workflow engine (PersonaOS) defines worker specifications in declarative profiles (`v1.yaml`), but you need to provision those workers across local developer CLI environments.
 

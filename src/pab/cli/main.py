@@ -1,7 +1,8 @@
 """PersonaOS Agent Bridge (PAB) CLI root."""
 
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from rich.console import Console
 import typer
 
@@ -15,8 +16,11 @@ from pab.cli.providers import providers_app
 from pab.cli.run import run_app
 from pab.cli.session import session_app
 from pab.cli.skill import skill_app
+from pab.cli.switch import switch_app
 from pab.cli.sync import sync_app
 from pab.personaos.bridge import PersonaOSBridge
+from pab.switch.engine import SwitchEngine
+from pab.switch.models import SwitchMode
 
 app = typer.Typer(
     name="pab",
@@ -25,6 +29,7 @@ app = typer.Typer(
 )
 console = Console()
 
+# Register sub-command modules
 app.add_typer(doctor_app, name="doctor")
 app.add_typer(providers_app, name="providers")
 app.add_typer(agent_app, name="agent")
@@ -34,6 +39,148 @@ app.add_typer(memory_app, name="memory")
 app.add_typer(session_app, name="session")
 app.add_typer(sync_app, name="sync")
 app.add_typer(backup_app, name="backup")
+app.add_typer(switch_app, name="switch")
+
+
+def _execute_provider_switch(
+    target_provider: str,
+    from_provider: Optional[str] = None,
+    session: Optional[str] = None,
+    agent: Optional[str] = None,
+    project: Optional[str] = None,
+    mode: str = "handoff",
+    no_skills: bool = False,
+    no_memory: bool = False,
+    dry_run: bool = False,
+    extra_args: Optional[List[str]] = None,
+):
+    """Core executor for one-command agent switching and native launching."""
+    engine = SwitchEngine()
+    passed_extra = [a for a in (extra_args or []) if a != "--"]
+
+    parsed_mode = SwitchMode(mode) if mode in [m.value for m in SwitchMode] else SwitchMode.HANDOFF
+
+    plan = engine.plan_switch(
+        target_provider_name=target_provider,
+        source_provider_name=from_provider,
+        session_id=session,
+        agent_id=agent,
+        project_path=Path(project) if project else None,
+        mode=parsed_mode,
+        no_skills=no_skills,
+        no_memory=no_memory,
+        extra_args=passed_extra,
+    )
+
+    if from_provider or dry_run:
+        console.print(f"\n[bold cyan]Switching from {from_provider or 'none'} ➔ {target_provider}[/bold cyan]")
+        console.print(f"Mode: [yellow]{plan.mode.value}[/yellow]")
+        console.print(f"Project: {plan.project_path}")
+        if plan.session_id:
+            console.print(f"Source Session: {plan.session_id}")
+        if plan.agent_id:
+            console.print(f"Source Agent: {plan.agent_id}")
+        if plan.skills_to_sync:
+            console.print(f"Skills to Sync ({len(plan.skills_to_sync)}): {', '.join(plan.skills_to_sync)}")
+        if plan.conflicting_skills:
+            console.print("[yellow]Conflicting Skills detected:[/yellow]")
+            for c in plan.conflicting_skills:
+                console.print(f"  - {c['name']} (Source: {c['source_version']} vs Dest: {c['destination_version']})")
+        for w in plan.warnings:
+            console.print(f"  ⚠️  [yellow]{w}[/yellow]")
+
+    if dry_run:
+        console.print("\n[bold green]Dry-run complete.[/bold green] Target launch command would be:")
+        console.print(f"  [cyan]{' '.join(plan.target_launch_cmd)}[/cyan]\n")
+        return
+
+    result = engine.execute_switch(plan, dry_run=dry_run, extra_args=passed_extra)
+    if result.success and from_provider:
+        console.print(f"\n[green]Handoff Bundle Generated:[/green] {result.handoff_id}")
+        console.print(f"Bundle directory: {result.handoff_dir}")
+        if result.launched:
+            console.print(f"[green]Launched {target_provider} CLI successfully.[/green]")
+
+
+# One-command switching top-level provider entrypoints
+@app.command("codex", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_codex(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to OpenAI Codex CLI from another provider, or launch Codex directly."""
+    _execute_provider_switch("codex", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
+
+
+@app.command("claude", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_claude(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to Anthropic Claude Code from another provider, or launch Claude directly."""
+    _execute_provider_switch("claude", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
+
+
+@app.command("agy", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_agy(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to Google Antigravity CLI (agy) from another provider, or launch agy directly."""
+    _execute_provider_switch("agy", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
+
+
+@app.command("openclaw", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_openclaw(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to OpenClaw from another provider, or launch OpenClaw directly."""
+    _execute_provider_switch("openclaw", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
+
+
+@app.command("minimax", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def switch_to_minimax(
+    ctx: typer.Context,
+    from_provider: Optional[str] = typer.Option(None, "--from", "-f", help="Source agent/provider platform"),
+    session: Optional[str] = typer.Option(None, "--session", "-s", help="Session ID or 'latest'"),
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent ID"),
+    project: Optional[str] = typer.Option(None, "--project", "-p", help="Project path"),
+    mode: str = typer.Option("handoff", "--mode", "-m", help="Switch mode: handoff|clone|skills-only"),
+    no_skills: bool = typer.Option(False, "--no-skills", help="Do not transfer skills"),
+    no_memory: bool = typer.Option(False, "--no-memory", help="Do not transfer memory"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Display migration plan without launching native CLI"),
+):
+    """Switch to MiniMax Coding CLI (mcode) from another provider, or launch mcode directly."""
+    _execute_provider_switch("minimax", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
 
 
 @app.command("run")
@@ -45,6 +192,7 @@ def run_cli_command(
     """Launch an agent through the specified provider platform."""
     from pab.cli.run import execute_run
     execute_run(agent_id, provider, with_handoff)
+
 
 personaos_app = typer.Typer(help="PersonaOS worker profile integration")
 
