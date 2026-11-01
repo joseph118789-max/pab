@@ -28,11 +28,14 @@ def list_codex_agents(home_dir: Optional[Path] = None, workspace_root: Optional[
                     text = toml_file.read_text(encoding="utf-8")
                     data = tomlkit.parse(text)
                     agent_sec = data.get("agent", {})
+                    name = data.get("name") or agent_sec.get("name", agent_id)
+                    description = data.get("description") or agent_sec.get("description", "")
+                    model = data.get("model") or agent_sec.get("model", "inherit")
                     meta = {
-                        "id": agent_sec.get("id", agent_id),
-                        "name": agent_sec.get("name", agent_id),
-                        "description": agent_sec.get("description", ""),
-                        "model": agent_sec.get("model", "inherit"),
+                        "id": agent_id,
+                        "name": str(name),
+                        "description": str(description),
+                        "model": str(model),
                         "path": str(toml_file),
                     }
                 except Exception:
@@ -56,31 +59,33 @@ def compile_codex_agent(
     toml_path = target_dir / f"{definition.id}.toml"
 
     doc = tomlkit.document()
-    agent_table = tomlkit.table()
-    agent_table.add("id", definition.id)
-    agent_table.add("name", definition.name)
-    agent_table.add("description", definition.description or definition.name)
-    agent_table.add("version", definition.version)
-    agent_table.add("model", definition.preferences.model)
-    agent_table.add("reasoning_effort", definition.preferences.reasoning_effort)
-    doc.add("agent", agent_table)
+    doc.add("name", definition.name)
+    doc.add("description", definition.description or definition.name)
 
-    inst_table = tomlkit.table()
-    instructions_text = (
-        f"You are {definition.name}. Role: {definition.identity.role}.\n"
-        f"Objective: {definition.identity.objective}\n"
-    )
-    inst_table.add("system_prompt", instructions_text)
-    doc.add("instructions", inst_table)
+    instructions_parts = [
+        f"You are {definition.name}. Role: {definition.identity.role}.",
+        f"Objective: {definition.identity.objective}",
+    ]
+    if definition.capabilities.tools.allowed:
+        instructions_parts.append(f"Allowed Tools: {', '.join(definition.capabilities.tools.allowed)}")
+    if definition.capabilities.tools.denied:
+        instructions_parts.append(f"Denied Tools: {', '.join(definition.capabilities.tools.denied)}")
+    if definition.capabilities.skills:
+        instructions_parts.append(f"Assigned Skills: {', '.join(definition.capabilities.skills)}")
+    developer_instructions = "\n".join(instructions_parts) + "\n"
 
-    tools_table = tomlkit.table()
-    tools_table.add("allowed", definition.capabilities.tools.allowed)
-    tools_table.add("denied", definition.capabilities.tools.denied)
-    doc.add("tools", tools_table)
+    doc.add("developer_instructions", developer_instructions)
 
-    skills_table = tomlkit.table()
-    skills_table.add("include", definition.capabilities.skills)
-    doc.add("skills", skills_table)
+    if definition.preferences.model and definition.preferences.model != "inherit":
+        doc.add("model", definition.preferences.model)
+    if definition.preferences.reasoning_effort and definition.preferences.reasoning_effort != "inherit":
+        doc.add("model_reasoning_effort", definition.preferences.reasoning_effort)
+
+    nicknames = [definition.id]
+    candidate = definition.name.lower().replace(" ", "-")
+    if candidate not in nicknames:
+        nicknames.append(candidate)
+    doc.add("nickname_candidates", nicknames)
 
     toml_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
