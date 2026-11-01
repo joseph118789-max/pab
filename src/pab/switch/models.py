@@ -13,6 +13,7 @@ class SwitchMode(str, Enum):
 
 
 class HandoffManifest(BaseModel):
+    version: str = "2.0"
     handoff_id: str
     source_provider: str
     destination_provider: str
@@ -25,6 +26,14 @@ class HandoffManifest(BaseModel):
     memory_references: List[str] = Field(default_factory=list)
     file_hashes: Dict[str, str] = Field(default_factory=dict)
     migration_warnings: List[str] = Field(default_factory=list)
+
+    # Canonical v2 structured fields
+    source: Dict[str, Any] = Field(default_factory=dict)
+    destination: Dict[str, Any] = Field(default_factory=dict)
+    workspace: Dict[str, Any] = Field(default_factory=dict)
+    worker_identity: Dict[str, Any] = Field(default_factory=dict)
+    context: Dict[str, Any] = Field(default_factory=dict)
+    provenance: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SwitchPlan(BaseModel):

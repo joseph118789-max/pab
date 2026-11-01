@@ -31,3 +31,19 @@ class SecurityViolationError(PABError):
 class SyncConflictError(PABError):
     """Raised when a synchronisation plan encounters unresolved conflicts."""
     pass
+
+class UnsupportedOperationError(PABError):
+    """Raised when a requested operation is not supported by the provider adapter."""
+    pass
+
+class DuplicateExecutionError(PABError):
+    """Raised when a duplicate execution request violates idempotency constraints."""
+    pass
+
+class ExecutionNotFoundError(PABError):
+    """Raised when a referenced execution ID does not exist in the supervisor."""
+    pass
+
+class StaleGenerationError(PABError):
+    """Raised when an event or action references an outdated execution generation."""
+    pass

@@ -12,6 +12,14 @@ from pab.core.models.agent import (
     CanonicalAgentProfile,
     ProviderConfig,
 )
+from pab.core.models.execution import (
+    ExecutionEvent,
+    ExecutionHandle,
+    ExecutionMode,
+    ExecutionStatus,
+    LaunchRequest,
+    ProviderCapabilities,
+)
 from pab.core.models.instruction import (
     CanonicalInstructions,
     InstructionRule,
@@ -57,4 +65,10 @@ __all__ = [
     "ActionType",
     "PlannedOperation",
     "SyncPlan",
+    "ExecutionMode",
+    "ExecutionStatus",
+    "LaunchRequest",
+    "ExecutionHandle",
+    "ExecutionEvent",
+    "ProviderCapabilities",
 ]

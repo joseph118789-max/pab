@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pab.core.models.agent import CanonicalAgentDefinition
 from pab.core.models.session import NormalizedSession
 from pab.core.models.skill import CanonicalSkill
-from pab.providers.base import AgentProvider
+from pab.providers.base import AgentAdapter, AgentProvider
 from pab.providers.openclaw.agents import (
     compile_openclaw_agent,
     delete_openclaw_agent,
@@ -29,11 +29,34 @@ from pab.providers.openclaw.skills import (
 )
 
 
-class OpenClawAdapter(AgentProvider):
+class OpenClawAdapter(AgentAdapter):
     """Adapter for OpenClaw platform."""
 
     def __init__(self, home_dir: Optional[Path] = None):
         self._home = home_dir or get_openclaw_home()
+
+    def get_executable_path(self) -> Optional[str]:
+        return get_openclaw_bin() or "/usr/bin/openclaw"
+
+    def supported_operations(self) -> List[str]:
+        return [
+            "discover",
+            "capabilities",
+            "list_agents",
+            "get_agent",
+            "create_agent",
+            "update_agent",
+            "delete_agent",
+            "list_skills",
+            "install_skill",
+            "remove_skill",
+            "list_sessions",
+            "export_session",
+            "resume",
+            "launch",
+            "stop",
+            "inspect",
+        ]
 
     @property
     def name(self) -> str:

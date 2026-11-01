@@ -9,6 +9,7 @@ import typer
 from pab import __version__
 from pab.cli.agent import agent_app
 from pab.cli.backup import backup_app
+from pab.cli.control import control_app
 from pab.cli.doctor import doctor_app
 from pab.cli.instruction import instruction_app
 from pab.cli.memory import memory_app
@@ -40,6 +41,8 @@ app.add_typer(session_app, name="session")
 app.add_typer(sync_app, name="sync")
 app.add_typer(backup_app, name="backup")
 app.add_typer(switch_app, name="switch")
+app.add_typer(control_app, name="control")
+app.add_typer(run_app, name="run")
 
 
 def _execute_provider_switch(
@@ -214,16 +217,6 @@ def switch_to_pi(
     """Switch to Pi Coding Agent (pi) from another provider, or launch pi directly."""
     _execute_provider_switch("pi", from_provider, session, agent, project, mode, no_skills, no_memory, dry_run, extra_args=ctx.args)
 
-
-@app.command("run")
-def run_cli_command(
-    agent_id: str = typer.Argument(..., help="Agent ID to run"),
-    provider: str = typer.Option("openclaw", "--provider", "-p", help="Target provider (openclaw|agy|codex|claude)"),
-    with_handoff: Optional[str] = typer.Option(None, "--with-handoff", help="Optional session ID to inject handoff context before launch"),
-):
-    """Launch an agent through the specified provider platform."""
-    from pab.cli.run import execute_run
-    execute_run(agent_id, provider, with_handoff)
 
 
 personaos_app = typer.Typer(help="PersonaOS worker profile integration")

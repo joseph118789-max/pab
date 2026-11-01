@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pab.core.models.agent import CanonicalAgentDefinition
 from pab.core.models.session import NormalizedSession
 from pab.core.models.skill import CanonicalSkill
-from pab.providers.base import AgentProvider
+from pab.providers.base import AgentAdapter, AgentProvider
 from pab.providers.dsh.agents import (
     compile_dsh_agent,
     delete_dsh_agent,
@@ -28,7 +28,7 @@ from pab.providers.dsh.skills import (
 )
 
 
-class DshAdapter(AgentProvider):
+class DshAdapter(AgentAdapter):
     """Adapter for DeepSeek Shell (DSH) platform."""
 
     def __init__(
@@ -38,6 +38,28 @@ class DshAdapter(AgentProvider):
     ):
         self._home = home_dir or get_dsh_home()
         self._workspace_root = workspace_root
+
+    def get_executable_path(self) -> Optional[str]:
+        return get_dsh_bin() or "/usr/bin/dsh"
+
+    def supported_operations(self) -> List[str]:
+        return [
+            "discover",
+            "capabilities",
+            "list_agents",
+            "get_agent",
+            "create_agent",
+            "update_agent",
+            "delete_agent",
+            "list_skills",
+            "install_skill",
+            "remove_skill",
+            "list_sessions",
+            "export_session",
+            "launch",
+            "stop",
+            "inspect",
+        ]
 
     @property
     def name(self) -> str:

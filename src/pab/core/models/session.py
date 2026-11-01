@@ -27,6 +27,7 @@ class NormalizedSession(BaseModel):
     exported_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     context: SessionContext = Field(default_factory=SessionContext)
     transcript_file: Optional[str] = None
+    raw_transcript: Optional[str] = None
     artifacts: Dict[str, str] = Field(default_factory=dict)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 

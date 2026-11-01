@@ -329,14 +329,70 @@ class SwitchEngine:
 
         if not dry_run:
             (handoff_dir / "HANDOFF.md").write_text(handoff_md_content, encoding="utf-8")
+            (handoff_dir / "summary.md").write_text(handoff_md_content, encoding="utf-8")
+            
+            # v2 context.json and workspace.diff
+            context_v2 = {
+                "original_objective": objective,
+                "task_summary": task_summary,
+                "completed_work": completed_work,
+                "pending_work": pending_work,
+                "technical_decisions": decisions,
+                "unresolved_issues": issues,
+                "skills": synced_skills,
+                "modified_files": modified_files,
+            }
+            (handoff_dir / "context.json").write_text(json.dumps(context_v2, indent=2), encoding="utf-8")
+
+            diff_summary = git_info.get("diff_summary") or ""
+            if diff_summary:
+                (handoff_dir / "workspace.diff").write_text(diff_summary, encoding="utf-8")
+
             if normalized_session:
-                (handoff_dir / "session.json").write_text(
-                    json.dumps(normalized_session.model_dump(mode="json"), indent=2), encoding="utf-8"
-                )
+                session_dump = json.dumps(normalized_session.model_dump(mode="json"), indent=2)
+                (handoff_dir / "session.json").write_text(session_dump, encoding="utf-8")
+                (handoff_dir / "source.json").write_text(session_dump, encoding="utf-8")
+                if normalized_session.raw_transcript:
+                    (handoff_dir / "transcript.jsonl").write_text(normalized_session.raw_transcript, encoding="utf-8")
 
         # Hashes and manifest
         file_hashes = compute_file_hashes(handoff_dir) if not dry_run else {}
+
+        # Canonical v2 structured fields
+        v2_source = {
+            "provider": plan.source_provider,
+            "session_id": plan.session_id,
+            "agent_id": plan.agent_id,
+        }
+        v2_destination = {
+            "provider": plan.destination_provider,
+            "session_id": f"{plan.destination_provider}:new",
+        }
+        v2_workspace = {
+            "project_path": str(project_dir),
+            "git_branch": git_info.get("branch"),
+            "modified_files": modified_files,
+            "is_dirty": bool(git_info.get("status")),
+        }
+        v2_worker = {
+            "worker_id": plan.agent_id or "personaos-developer",
+            "role": source_provider.display_name if source_provider else "AI Developer",
+        }
+        v2_context_block = {
+            "original_objective": objective,
+            "task_summary": task_summary,
+            "completed_work": completed_work,
+            "pending_work": pending_work,
+            "technical_decisions": decisions,
+            "skills": synced_skills,
+        }
+        v2_provenance = {
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "generator": "PAB Handoff Engine v2.0",
+        }
+
         manifest = HandoffManifest(
+            version="2.0",
             handoff_id=handoff_id,
             source_provider=plan.source_provider,
             destination_provider=plan.destination_provider,
@@ -348,12 +404,25 @@ class SwitchEngine:
             memory_references=plan.memories_to_transfer,
             file_hashes=file_hashes,
             migration_warnings=warnings,
+            source=v2_source,
+            destination=v2_destination,
+            workspace=v2_workspace,
+            worker_identity=v2_worker,
+            context=v2_context_block,
+            provenance=v2_provenance,
         )
 
         if not dry_run:
             (handoff_dir / "manifest.json").write_text(
                 json.dumps(manifest.model_dump(mode="json"), indent=2), encoding="utf-8"
             )
+
+            # Mirror to canonical .pab/sessions/handoffs/<id>
+            canonical_handoff_dir = project_dir / ".pab" / "sessions" / "handoffs" / handoff_id
+            try:
+                shutil.copytree(handoff_dir, canonical_handoff_dir, dirs_exist_ok=True)
+            except Exception:
+                pass
 
         # Step 7: Formulate handoff instruction and launch
         handoff_rel_path = f".pab/handoffs/{handoff_id}/HANDOFF.md"

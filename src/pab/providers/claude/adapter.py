@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pab.core.models.agent import CanonicalAgentDefinition
 from pab.core.models.session import NormalizedSession
 from pab.core.models.skill import CanonicalSkill
-from pab.providers.base import AgentProvider
+from pab.providers.base import AgentAdapter, AgentProvider
 from pab.providers.claude.agents import (
     compile_claude_agent,
     delete_claude_agent,
@@ -28,12 +28,30 @@ from pab.providers.claude.skills import (
 )
 
 
-class ClaudeAdapter(AgentProvider):
+class ClaudeAdapter(AgentAdapter):
     """Adapter for Anthropic Claude Code platform."""
 
     def __init__(self, home_dir: Optional[Path] = None, workspace_root: Optional[Path] = None):
         self._home = home_dir or get_claude_home()
         self._workspace_root = workspace_root
+
+    def get_executable_path(self) -> Optional[str]:
+        return get_claude_bin()
+
+    def supported_operations(self) -> List[str]:
+        return [
+            "discover",
+            "capabilities",
+            "list_skills",
+            "install_skill",
+            "remove_skill",
+            "list_sessions",
+            "export_session",
+            "resume",
+            "launch",
+            "stop",
+            "inspect",
+        ]
 
     @property
     def name(self) -> str:

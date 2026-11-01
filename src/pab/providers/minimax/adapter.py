@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pab.core.models.agent import CanonicalAgentDefinition
 from pab.core.models.session import NormalizedSession
 from pab.core.models.skill import CanonicalSkill
-from pab.providers.base import AgentProvider
+from pab.providers.base import AgentAdapter, AgentProvider
 from pab.providers.minimax.agents import (
     compile_minimax_agent,
     delete_minimax_agent,
@@ -23,7 +23,7 @@ from pab.providers.minimax.skills import (
 )
 
 
-class MinimaxAdapter(AgentProvider):
+class MinimaxAdapter(AgentAdapter):
     """Adapter for MiniMax Coding (mcode) platform."""
 
     def __init__(
@@ -33,6 +33,29 @@ class MinimaxAdapter(AgentProvider):
     ):
         self._home = home_dir or get_minimax_home()
         self._workspace_root = workspace_root
+
+    def get_executable_path(self) -> Optional[str]:
+        return get_minimax_bin() or "/usr/bin/mcode"
+
+    def supported_operations(self) -> List[str]:
+        return [
+            "discover",
+            "capabilities",
+            "list_agents",
+            "get_agent",
+            "create_agent",
+            "update_agent",
+            "delete_agent",
+            "list_skills",
+            "install_skill",
+            "remove_skill",
+            "list_sessions",
+            "export_session",
+            "resume",
+            "launch",
+            "stop",
+            "inspect",
+        ]
 
     @property
     def name(self) -> str:

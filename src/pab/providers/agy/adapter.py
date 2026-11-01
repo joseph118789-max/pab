@@ -26,10 +26,10 @@ from pab.providers.agy.skills import (
     list_agy_skills,
     remove_agy_skill,
 )
-from pab.providers.base import AgentProvider
+from pab.providers.base import AgentAdapter, AgentProvider
 
 
-class AgyAdapter(AgentProvider):
+class AgyAdapter(AgentAdapter):
     """Adapter for Google Antigravity CLI (agy)."""
 
     def __init__(
@@ -41,6 +41,29 @@ class AgyAdapter(AgentProvider):
         self._config_dir = config_dir or get_agy_config_dir()
         self._cli_dir = cli_dir or get_agy_cli_dir()
         self._workspace_root = workspace_root
+
+    def get_executable_path(self) -> Optional[str]:
+        return get_agy_bin() or "/root/.local/bin/agy"
+
+    def supported_operations(self) -> List[str]:
+        return [
+            "discover",
+            "capabilities",
+            "list_agents",
+            "get_agent",
+            "create_agent",
+            "update_agent",
+            "delete_agent",
+            "list_skills",
+            "install_skill",
+            "remove_skill",
+            "list_sessions",
+            "export_session",
+            "resume",
+            "launch",
+            "stop",
+            "inspect",
+        ]
 
     @property
     def name(self) -> str:

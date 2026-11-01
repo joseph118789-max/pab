@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 from pab.core.models.agent import CanonicalAgentDefinition
 from pab.core.models.session import NormalizedSession
 from pab.core.models.skill import CanonicalSkill
-from pab.providers.base import AgentProvider
+from pab.providers.base import AgentAdapter, AgentProvider
 from pab.providers.codex.agents import (
     compile_codex_agent,
     delete_codex_agent,
@@ -28,12 +28,35 @@ from pab.providers.codex.skills import (
 )
 
 
-class CodexAdapter(AgentProvider):
+class CodexAdapter(AgentAdapter):
     """Adapter for OpenAI Codex CLI platform."""
 
     def __init__(self, home_dir: Optional[Path] = None, workspace_root: Optional[Path] = None):
         self._home = home_dir or get_codex_home()
         self._workspace_root = workspace_root
+
+    def get_executable_path(self) -> Optional[str]:
+        return get_codex_bin()
+
+    def supported_operations(self) -> List[str]:
+        return [
+            "discover",
+            "capabilities",
+            "list_agents",
+            "get_agent",
+            "create_agent",
+            "update_agent",
+            "delete_agent",
+            "list_skills",
+            "install_skill",
+            "remove_skill",
+            "list_sessions",
+            "export_session",
+            "resume",
+            "launch",
+            "stop",
+            "inspect",
+        ]
 
     @property
     def name(self) -> str:
