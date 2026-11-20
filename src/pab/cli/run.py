@@ -129,17 +129,22 @@ def create_task_cmd(
 
 @run_app.command("dispatch")
 def dispatch_task_cmd(
-    agent: str = typer.Option(..., "--agent", "-a", help="Target agent provider (codex|claude|pi|agy|openclaw)"),
+    agent: str = typer.Option(..., "--agent", "-a", help="Target agent provider with a real execution implementation (agy|pi)"),
     task_id: Optional[str] = typer.Option(None, "--task", "-t", help="Existing task ID to dispatch"),
     spec: Optional[str] = typer.Option(None, "--spec", help="Task spec/prompt (creates task if --task omitted)"),
     run_id: Optional[str] = typer.Option(None, "--run", "-r", help="Run ID (defaults to latest active run)"),
-    worker: Optional[str] = typer.Option(None, "--worker", "-w", help="PersonaOS persistent worker ID"),
-    worktree: Optional[str] = typer.Option(None, "--worktree", help="Worktree or workspace directory path"),
+    worker: Optional[str] = typer.Option(None, "--worker", "-w", help="PersonaOS persistent worker ID (AGY: sales|research|delivery|automation|qa)"),
+    worktree: Optional[str] = typer.Option(None, "--worktree", help="Worktree or workspace directory path (absolute paths are used verbatim)"),
+    timeout: float = typer.Option(900.0, "--timeout", help="Execution timeout in seconds"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Simulate dispatch without starting processes"),
     as_json: bool = typer.Option(False, "--json", "-j", help="Output machine-readable JSON"),
 ):
     """Dispatch an agent execution attempt for a task."""
     engine = OrchestrationEngine()
+
+    # Absolute worktree paths are honoured verbatim; relative ones are resolved
+    # against the run workspace by the engine.
+    worktree_path = Path(worktree).expanduser().resolve() if worktree else None
 
     # Resolve Run ID if not specified
     target_run_id = run_id
@@ -152,7 +157,7 @@ def dispatch_task_cmd(
             new_run = engine.create_run(
                 name=f"dispatch-{agent}",
                 objective=spec or f"Ad-hoc execution on {agent}",
-                workspace_path=Path(worktree) if worktree else Path.cwd(),
+                workspace_path=worktree_path or Path.cwd(),
             )
             target_run_id = new_run.run_id
 
@@ -176,9 +181,10 @@ def dispatch_task_cmd(
             task_id=target_task_id,
             agent_provider=agent,
             worker_id=worker,
-            worktree_path=Path(worktree) if worktree else None,
+            worktree_path=worktree_path,
             spec_override=spec,
             dry_run=dry_run,
+            timeout_seconds=timeout,
         )
 
         if as_json:
@@ -192,6 +198,15 @@ def dispatch_task_cmd(
         console.print(f"Worktree: {dispatch.worktree_path}")
         if dispatch.process_id:
             console.print(f"Process PID: {dispatch.process_id}")
+        meta = dispatch.metadata or {}
+        if meta.get("profile"):
+            console.print(f"AGY Profile: [cyan]{meta['profile']}[/cyan] ({meta.get('profile_home', 'n/a')})")
+        if meta.get("conversation_id"):
+            console.print(f"Trace/Conversation ID: [cyan]{meta['conversation_id']}[/cyan]")
+        if meta.get("trace_path"):
+            console.print(f"Trace File: {meta['trace_path']}")
+        if meta.get("execution_id"):
+            console.print(f"Execution ID: [cyan]{meta['execution_id']}[/cyan]")
         if dispatch.result_summary:
             console.print(f"Result: {dispatch.result_summary}")
 
@@ -274,8 +289,10 @@ def run_status_cmd(
         dtable.add_column("Worker")
         dtable.add_column("Status")
         dtable.add_column("PID")
+        dtable.add_column("Trace ID")
         for d in dispatches:
-            dtable.add_row(d.dispatch_id, d.agent_provider, d.worker_id, d.status.value, str(d.process_id or "-"))
+            trace = (d.metadata or {}).get("conversation_id") or "-"
+            dtable.add_row(d.dispatch_id, d.agent_provider, d.worker_id, d.status.value, str(d.process_id or "-"), str(trace))
         console.print(dtable)
 
 

@@ -88,7 +88,12 @@ class ExecutionSupervisor:
             term_handle = handle.terminal_handle
             native_sess_id = handle.native_session_id
             status = handle.status
+            err_msg = handle.error_message or err_msg
+            adapter_exit_code = handle.exit_code
+            adapter_metadata = dict(handle.metadata or {})
         else:
+            adapter_exit_code = None
+            adapter_metadata = {}
             # Default process launcher for managed_process
             if request.execution_mode == ExecutionMode.MANAGED_PROCESS:
                 cmd = request.command
@@ -126,6 +131,11 @@ class ExecutionSupervisor:
                 term_handle = f"term_orca_{uuid.uuid4().hex[:8]}"
 
         # 4. Construct execution handle
+        completed_at = (
+            datetime.now(timezone.utc)
+            if status in [ExecutionStatus.COMPLETED, ExecutionStatus.FAILED, ExecutionStatus.CANCELLED]
+            else None
+        )
         handle = ExecutionHandle(
             execution_id=exec_id,
             request_id=request.request_id,
@@ -141,11 +151,12 @@ class ExecutionSupervisor:
             native_session_id=native_sess_id,
             process_id=pid,
             terminal_handle=term_handle,
-            exit_code=None if status != ExecutionStatus.FAILED else 1,
+            exit_code=adapter_exit_code if adapter_exit_code is not None else (1 if status == ExecutionStatus.FAILED else None),
             started_at=now,
+            completed_at=completed_at,
             last_event_sequence=1,
             error_message=err_msg,
-            metadata=request.metadata,
+            metadata={**request.metadata, **adapter_metadata},
         )
 
         # 5. Persist execution and emit initial event

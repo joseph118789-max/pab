@@ -30,3 +30,9 @@ pab = "pab.cli.main:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: real provider integration tests (require local CLIs, profiles and network)",
+]

@@ -240,6 +240,54 @@ pab personaos sync --dir /root/projects/PersonaOS/profiles --to all
 
 ---
 
+### Use Case 7: Real Multi-Agent Dispatch to Google Antigravity (`agy`)
+
+**The Problem:** `pab run dispatch --agent agy` used to report success without ever
+starting AGY (fixed template message, fabricated PID, task flipped to `completed`).
+Silent false successes are worse than failures in an autonomous pipeline.
+
+**With PAB:** `agy` is a real, supervised execution target. PAB spawns the AGY CLI in
+print mode inside the worker's directory, under the worker's isolated AGY profile
+(`~/.agy-<profile>`), parses the JSON result and records the truth: conversation id
+(trace id), response, usage, exit code and transcript path.
+
+```bash
+# 1. Plan the dispatch (no process is started)
+pab run dispatch --agent agy --worker sales --worktree /root/projects/sentinel_ops/agents/sales \
+  --spec "Draft a one-page renewal proposal for ACME Corp" --dry-run
+
+# 2. Execute it for real
+pab run dispatch --agent agy --worker sales \
+  --worktree /root/projects/sentinel_ops/agents/sales \
+  --spec "Draft a one-page renewal proposal for ACME Corp" --json
+
+# 3. Inspect what actually happened
+pab run status --run <RUN_ID>       # dispatch table incl. trace id
+pab control status <EXECUTION_ID>   # persisted execution record
+```
+
+Sentinel Ops workers are pre-registered (`automation`, `delivery`, `qa`, `research`,
+`sales`); each maps to its own AGY profile and working directory. Configuration:
+
+```yaml
+# ~/.pab/config.yaml
+custom:
+  agy_workers:
+    - id: sales
+      label: AGY-Sales
+      profile: seekn
+      workdir: /root/projects/sentinel_ops/agents/sales
+  agy_worker_base: /root/projects/sentinel_ops/agents
+  agy_profile_root: /root
+```
+
+**Guardrails:** only providers with a verified execution implementation (`agy`, `pi`)
+can be dispatched — `claude`, `codex` and `openclaw` currently fail explicitly with
+`UnsupportedOperationError` instead of pretending to work. A task is marked
+`completed` only after a real execution returned a valid, traceable result.
+
+---
+
 ## Platform Storage & Discovery Mapping
 
 | Platform | Agent Config Location | Skills Location | Instructions |

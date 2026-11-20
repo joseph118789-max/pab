@@ -1,11 +1,23 @@
 """Google Antigravity CLI (agy) Provider Adapter."""
 
 import subprocess
+import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from pab.core.exceptions import ExecutionNotFoundError
 from pab.core.models.agent import CanonicalAgentDefinition
+from pab.core.models.execution import (
+    ExecutionEvent,
+    ExecutionHandle,
+    ExecutionMode,
+    ExecutionStatus,
+    LaunchRequest,
+)
 from pab.core.models.session import NormalizedSession
 from pab.core.models.skill import CanonicalSkill
+from pab.providers.agy.execution import AgyExecutionResult, AgyRunner
 from pab.providers.agy.agents import (
     compile_agy_agent,
     delete_agy_agent,
@@ -26,6 +38,7 @@ from pab.providers.agy.skills import (
     list_agy_skills,
     remove_agy_skill,
 )
+from pab.providers.agy.workers import AgyWorkerRegistry
 from pab.providers.base import AgentAdapter, AgentProvider
 
 
@@ -37,10 +50,18 @@ class AgyAdapter(AgentAdapter):
         config_dir: Optional[Path] = None,
         cli_dir: Optional[Path] = None,
         workspace_root: Optional[Path] = None,
+        worker_registry: Optional[AgyWorkerRegistry] = None,
+        runner: Optional[AgyRunner] = None,
+        default_timeout: float = 900.0,
     ):
         self._config_dir = config_dir or get_agy_config_dir()
         self._cli_dir = cli_dir or get_agy_cli_dir()
         self._workspace_root = workspace_root
+        self._workers = worker_registry or AgyWorkerRegistry.from_config()
+        self._runner = runner or AgyRunner(default_timeout=default_timeout)
+        self._handles: Dict[str, ExecutionHandle] = {}
+        self._results: Dict[str, AgyExecutionResult] = {}
+        self._lock = threading.Lock()
 
     def get_executable_path(self) -> Optional[str]:
         return get_agy_bin() or "/root/.local/bin/agy"
@@ -61,9 +82,93 @@ class AgyAdapter(AgentAdapter):
             "export_session",
             "resume",
             "launch",
-            "stop",
             "inspect",
         ]
+
+    # ------------------------------------------------------------------
+    # Execution (real AGY print-mode subprocess)
+    # ------------------------------------------------------------------
+    def worker_registry(self) -> AgyWorkerRegistry:
+        """Return the AGY worker registry backing this adapter."""
+        return self._workers
+
+    def launch(self, request: LaunchRequest) -> ExecutionHandle:
+        """
+        Execute an AGY print-mode turn for the requested worker.
+
+        The AGY process is started for real, in the worker's workdir, under the
+        worker's isolated profile HOME. The returned handle reports COMPLETED only
+        when AGY exited cleanly and returned a valid, traceable result.
+        """
+        exec_id = f"exec-agy-{uuid.uuid4().hex[:10]}"
+        now = datetime.now(timezone.utc)
+
+        worker = self._workers.resolve(
+            worker_id=request.worker_id,
+            worktree=request.workspace_path,
+        )
+
+        result = self._runner.run(
+            worker,
+            prompt=request.prompt or "",
+            timeout=request.timeout_seconds or self._runner.default_timeout,
+            extra_env=request.environment,
+            workdir=Path(request.workspace_path) if request.workspace_path else None,
+        )
+
+        metadata = {
+            **request.metadata,
+            **result.to_dict(),
+        }
+
+        handle = ExecutionHandle(
+            execution_id=exec_id,
+            request_id=request.request_id,
+            idempotency_key=request.idempotency_key,
+            task_id=request.task_id,
+            worker_id=request.worker_id,
+            worker_profile_version=request.worker_profile_version,
+            execution_generation=request.execution_generation,
+            provider=self.name,
+            execution_mode=request.execution_mode,
+            workspace=str(request.workspace_path),
+            status=ExecutionStatus.COMPLETED if result.ok else ExecutionStatus.FAILED,
+            native_session_id=result.conversation_id,
+            exit_code=result.exit_code,
+            started_at=now,
+            completed_at=datetime.now(timezone.utc),
+            error_message=result.error,
+            metadata=metadata,
+        )
+
+        with self._lock:
+            self._handles[exec_id] = handle
+            self._results[exec_id] = result
+
+        return handle
+
+    def result_for(self, execution_id: str) -> AgyExecutionResult:
+        """Return the captured AGY result for an execution."""
+        with self._lock:
+            result = self._results.get(execution_id)
+        if not result:
+            raise ExecutionNotFoundError(f"Execution '{execution_id}' not found on AGY provider.")
+        return result
+
+    def inspect(self, execution_id: str) -> ExecutionHandle:
+        """Return the recorded handle for a completed AGY execution."""
+        with self._lock:
+            handle = self._handles.get(execution_id)
+        if not handle:
+            raise ExecutionNotFoundError(f"Execution '{execution_id}' not found on AGY provider.")
+        return handle
+
+    def stop(self, execution_id: str, force: bool = False) -> bool:
+        """
+        AGY print-mode turns are synchronous, so there is no live process to stop.
+        Returns False instead of pretending a cancellation happened.
+        """
+        return False
 
     @property
     def name(self) -> str:
@@ -101,6 +206,11 @@ class AgyAdapter(AgentAdapter):
             "sessions": True,
             "native_resume": True,
             "instruction_files": ["GEMINI.md", "AGENTS.md", "agent.md"],
+            "execution": True,
+            "print_mode": True,
+            "json_output": True,
+            "profile_isolation": True,
+            "workers": [w.to_dict() for w in self._workers.list_workers()],
         }
 
     def list_agents(self) -> List[Dict[str, Any]]:

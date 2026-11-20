@@ -14,9 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from pab.core.capability_registry import CapabilityRegistry
 from pab.core.config import ConfigManager
 from pab.core.db import Database
-from pab.core.exceptions import PABError, ProviderExecutionError
+from pab.core.exceptions import PABError, ProviderExecutionError, UnsupportedOperationError
+from pab.core.execution_supervisor import ExecutionSupervisor
 from pab.core.models.execution import ExecutionMode, ExecutionStatus, LaunchRequest
 from pab.core.models.orchestration import (
     DecisionGate,
@@ -30,8 +32,13 @@ from pab.core.models.orchestration import (
     TaskStatus,
 )
 from pab.core.orca_bridge import OrcaBridge
+from pab.providers.agy.workers import AgyWorkerResolutionError
 from pab.providers.detector import ProviderRegistry
 from pab.providers.pi.adapter import PiAdapter
+
+# Providers with a real, verified execution implementation. Every other provider
+# fails explicitly instead of reporting a fabricated success.
+EXECUTABLE_DISPATCH_PROVIDERS = ("agy", "pi")
 
 logger = logging.getLogger("pab.core.orchestration")
 
@@ -227,6 +234,7 @@ class OrchestrationEngine:
         worktree_path: Optional[Path] = None,
         spec_override: Optional[str] = None,
         dry_run: bool = False,
+        timeout_seconds: float = 900.0,
     ) -> OrchestrationDispatch:
         """Dispatch a task to a target agent runtime in an isolated workspace."""
         run = self.get_run(run_id)
@@ -246,67 +254,106 @@ class OrchestrationEngine:
                     f"Resolve it first with: pab run gate resolve --gate {gate.gate_id} --choice <option>"
                 )
 
-        provider = self.providers.get(agent_provider.lower())
+        provider_key = agent_provider.lower()
+        provider = self.providers.get(provider_key)
         if not provider:
             raise PABError(f"Agent provider '{agent_provider}' not registered.")
 
+        # Only providers with a real, verified execution implementation may be
+        # dispatched. Everything else fails loudly instead of faking a success.
+        if provider_key not in EXECUTABLE_DISPATCH_PROVIDERS:
+            raise UnsupportedOperationError(
+                f"Provider '{provider_key}' does not support execution dispatch. "
+                f"Implemented dispatch targets: {', '.join(EXECUTABLE_DISPATCH_PROVIDERS)}."
+            )
+
         dispatch_id = f"disp-{uuid.uuid4().hex[:8]}"
-        resolved_worker = worker_id or task.assigned_worker_id or f"personaos-{agent_provider}"
+        requested_worker = worker_id or task.assigned_worker_id
+        resolved_worker = requested_worker or f"personaos-{provider_key}"
         resolved_spec = spec_override or task.spec
-        worktree = Path(worktree_path).resolve() if worktree_path else Path(run.workspace_path).resolve()
+
+        # AGY workers are bound to an isolated profile: resolve the worker (and its
+        # working directory) before the dispatch so the right profile is used.
+        agy_worker = None
+        if provider_key == "agy":
+            agy_worker = self._resolve_agy_worker(requested_worker, worktree_path)
+            if agy_worker is not None:
+                resolved_worker = agy_worker.worker_id
+            else:
+                raise AgyWorkerResolutionError(
+                    "AGY dispatch requires a known worker. "
+                    f"Pass --worker <id> or a --worktree inside a worker directory. "
+                    f"Known workers: {', '.join(w.worker_id for w in self._agy_workers())}."
+                )
+
+        worktree = self._resolve_worktree(run, worktree_path, provider_key, resolved_worker, agy_worker)
 
         now = datetime.now(timezone.utc)
         dispatch_status = DispatchStatus.RUNNING
         pid: Optional[int] = None
         term_handle: Optional[str] = None
         result_text: Optional[str] = None
+        task_status = TaskStatus.DISPATCHED
+        extra_metadata: Dict[str, Any] = {}
 
         if dry_run:
             dispatch_status = DispatchStatus.SETTLED
-            result_text = f"[Dry Run] Dispatched '{task.title}' to {provider.display_name} in {worktree}"
+            plan = self._describe_dispatch_plan(provider_key, resolved_worker, worktree, resolved_spec)
+            extra_metadata["dry_run"] = True
+            extra_metadata["plan"] = plan
+            result_text = f"[Dry Run] Would dispatch '{task.title}' to {provider.display_name} in {worktree}"
+            task_status = TaskStatus.PENDING
         else:
-            # Check if agent is Pi
-            if agent_provider.lower() == "pi":
-                pi_adapter = provider if isinstance(provider, PiAdapter) else PiAdapter(workspace_root=worktree)
-                launch_req = LaunchRequest(
-                    request_id=f"req-{dispatch_id}",
-                    idempotency_key=f"idem-{dispatch_id}",
-                    worker_id=resolved_worker,
-                    task_id=task_id,
-                    provider="pi",
-                    workspace_path=worktree,
-                    prompt=resolved_spec,
-                    execution_mode=ExecutionMode.MANAGED_PROCESS,
-                )
-                try:
-                    handle = pi_adapter.launch(launch_req)
-                    pid = handle.process_id
-                    dispatch_status = DispatchStatus.SETTLED if handle.status == ExecutionStatus.RUNNING else DispatchStatus.FAILED
-                    result_text = f"Pi completed execution of '{task.title}'"
+            handle = self._execute_dispatch(
+                provider_key=provider_key,
+                dispatch_id=dispatch_id,
+                task_id=task_id,
+                worker_id=resolved_worker,
+                worktree=worktree,
+                spec=resolved_spec,
+                timeout_seconds=timeout_seconds,
+                run=run,
+            )
+            pid = handle.process_id
+            term_handle = handle.terminal_handle
+            extra_metadata["execution_id"] = handle.execution_id
+            extra_metadata.update(handle.metadata or {})
 
-                    # Bridge completion to Orca Run if active
-                    if self.orca.is_available and "orca_run_id" in run.metadata:
+            if handle.status == ExecutionStatus.COMPLETED:
+                dispatch_status = DispatchStatus.SETTLED
+                task_status = TaskStatus.COMPLETED
+                result_text = self._summarise_success(provider_key, task.title, handle)
+            elif handle.status == ExecutionStatus.RUNNING:
+                # Execution accepted but still running: not completed.
+                dispatch_status = DispatchStatus.RUNNING
+                task_status = TaskStatus.DISPATCHED
+                result_text = (
+                    f"{provider.display_name} accepted '{task.title}' and is still running "
+                    f"(execution {handle.execution_id})."
+                )
+            else:
+                dispatch_status = DispatchStatus.FAILED
+                task_status = TaskStatus.FAILED
+                result_text = f"{provider.display_name} failed to execute '{task.title}': {handle.error_message or 'unknown error'}"
+
+            if dispatch_status == DispatchStatus.SETTLED:
+                # Bridge completion to Orca Run if active
+                if self.orca.is_available and "orca_run_id" in run.metadata:
+                    try:
                         self.orca.send_worker_done(
                             run_id=run.metadata["orca_run_id"],
                             task_id=task_id,
                             dispatch_id=dispatch_id,
                             outcome="succeeded",
                         )
-                except Exception as exc:
-                    dispatch_status = DispatchStatus.FAILED
-                    result_text = f"Pi launch failed: {exc}"
-
-            else:
-                # Other providers (Claude, Codex, Antigravity)
-                pid = 1000 + int(uuid.uuid4().int % 9000)
-                dispatch_status = DispatchStatus.SETTLED
-                result_text = f"{provider.display_name} executed review/task '{task.title}'"
+                    except Exception as exc:
+                        logger.warning("Failed to bridge worker_done to Orca: %s", exc)
 
         dispatch = OrchestrationDispatch(
             dispatch_id=dispatch_id,
             task_id=task_id,
             run_id=run_id,
-            agent_provider=agent_provider.lower(),
+            agent_provider=provider_key,
             worker_id=resolved_worker,
             worktree_path=str(worktree),
             status=dispatch_status,
@@ -315,27 +362,173 @@ class OrchestrationEngine:
             started_at=now,
             completed_at=now if dispatch_status in [DispatchStatus.SETTLED, DispatchStatus.COMPLETED, DispatchStatus.FAILED] else None,
             result_summary=result_text,
-            metadata={"objective": run.objective, "spec": resolved_spec},
+            metadata={"objective": run.objective, "spec": resolved_spec, **extra_metadata},
         )
         self.db.save_dispatch(dispatch)
 
-        # Update task status to completed if dispatch settled
-        if dispatch_status in [DispatchStatus.SETTLED, DispatchStatus.COMPLETED]:
-            updated_task = OrchestrationTask(
-                task_id=task.task_id,
-                run_id=task.run_id,
-                title=task.title,
-                spec=task.spec,
-                dependencies=task.dependencies,
-                status=TaskStatus.COMPLETED,
-                assigned_worker_id=resolved_worker,
-                gate_id=task.gate_id,
-                personaos_task_id=task.personaos_task_id,
-                created_at=task.created_at,
-            )
-            self.db.save_task(updated_task)
+        # Task lifecycle: only a verified execution may mark the task completed.
+        updated_task = OrchestrationTask(
+            task_id=task.task_id,
+            run_id=task.run_id,
+            title=task.title,
+            spec=task.spec,
+            dependencies=task.dependencies,
+            status=task_status,
+            assigned_worker_id=resolved_worker,
+            gate_id=task.gate_id,
+            personaos_task_id=task.personaos_task_id,
+            created_at=task.created_at,
+        )
+        self.db.save_task(updated_task)
 
         return dispatch
+
+    # ------------------------------------------------------------------
+    # Dispatch helpers
+    # ------------------------------------------------------------------
+    def _agy_registry(self):
+        """Return the AGY worker registry bound to the AGY adapter (if any)."""
+        provider = self.providers.get("agy")
+        registry = getattr(provider, "worker_registry", None)
+        if callable(registry):
+            try:
+                return registry()
+            except Exception:
+                return None
+        return registry
+
+    def _agy_workers(self):
+        registry = self._agy_registry()
+        if registry is None:
+            return []
+        return registry.list_workers()
+
+    def _resolve_agy_worker(self, requested_worker: Optional[str], worktree_path: Optional[Path]):
+        """
+        Resolve the AGY worker for a dispatch.
+
+        An explicitly requested worker id must exist. When no worker id is given the
+        worker is derived from the worktree (absolute paths are matched against the
+        known worker directories).
+        """
+        registry = self._agy_registry()
+        if registry is None:
+            return None
+
+        if requested_worker:
+            worker = registry.get(requested_worker)
+            if worker:
+                return worker
+            raise AgyWorkerResolutionError(
+                f"Unknown AGY worker '{requested_worker}'. "
+                f"Known workers: {', '.join(w.worker_id for w in registry.list_workers())}."
+            )
+
+        if worktree_path is not None:
+            return registry.resolve(worktree=Path(worktree_path).expanduser())
+
+        return None
+
+    def _resolve_worktree(
+        self,
+        run: OrchestrationRun,
+        worktree_path: Optional[Path],
+        provider_key: str,
+        worker_id: str,
+        agy_worker: Any = None,
+    ) -> Path:
+        """
+        Resolve the working directory for a dispatch.
+
+        Absolute paths are used verbatim (only normalised); relative paths are
+        resolved against the run workspace so that the recorded worktree is always
+        an absolute path. For AGY, an unspecified worktree resolves to the
+        worker's own directory so that profile isolation is preserved.
+        """
+        if worktree_path is not None:
+            candidate = Path(worktree_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = Path(run.workspace_path).expanduser() / candidate
+            return candidate.resolve()
+
+        if provider_key == "agy" and agy_worker is not None:
+            return Path(agy_worker.workdir).expanduser().resolve()
+
+        return Path(run.workspace_path).expanduser().resolve()
+
+    def _execute_dispatch(
+        self,
+        provider_key: str,
+        dispatch_id: str,
+        task_id: str,
+        worker_id: str,
+        worktree: Path,
+        spec: str,
+        timeout_seconds: float,
+        run: OrchestrationRun,
+    ):
+        """Execute a dispatch through the supervised provider adapter."""
+        supervisor = ExecutionSupervisor(self.config, CapabilityRegistry(self.providers))
+        launch_req = LaunchRequest(
+            request_id=f"req-{dispatch_id}",
+            idempotency_key=f"idem-{dispatch_id}",
+            worker_id=worker_id,
+            task_id=task_id,
+            provider=provider_key,
+            workspace_path=worktree,
+            prompt=spec,
+            execution_mode=ExecutionMode.MANAGED_PROCESS,
+            timeout_seconds=timeout_seconds,
+            metadata={
+                "objective": run.objective,
+                "spec": spec,
+                "dispatch_id": dispatch_id,
+            },
+        )
+        return supervisor.launch(launch_req)
+
+    def _describe_dispatch_plan(
+        self,
+        provider_key: str,
+        worker_id: str,
+        worktree: Path,
+        spec: str,
+    ) -> Dict[str, Any]:
+        """Describe what a real dispatch would do (no execution)."""
+        plan: Dict[str, Any] = {
+            "provider": provider_key,
+            "worker_id": worker_id,
+            "workdir": str(worktree),
+            "spec": spec,
+        }
+        if provider_key == "agy":
+            registry = self._agy_registry()
+            if registry is not None:
+                try:
+                    worker = registry.resolve(worker_id=worker_id, worktree=worktree)
+                    plan["worker"] = worker.worker_id
+                    plan["profile"] = worker.profile
+                    plan["profile_home"] = str(worker.profile_home)
+                except Exception as exc:
+                    plan["resolution_error"] = str(exc)
+        return plan
+
+    @staticmethod
+    def _summarise_success(provider_key: str, task_title: str, handle) -> str:
+        """Build a result summary from the verified execution result."""
+        meta = handle.metadata or {}
+        parts = [f"{provider_key.upper()} completed '{task_title}'"]
+        if meta.get("profile"):
+            parts.append(f"profile={meta['profile']}")
+        if meta.get("conversation_id"):
+            parts.append(f"conversation={meta['conversation_id']}")
+        if meta.get("duration_seconds") is not None:
+            parts.append(f"duration={meta['duration_seconds']}s")
+        response = (meta.get("response") or "").strip()
+        if response:
+            excerpt = response if len(response) <= 500 else response[:500] + "..."
+            parts.append(f"response={excerpt}")
+        return " | ".join(parts)
 
     # -------------------------------------------------------------------------
     # Results Aggregation (Use Cases B & C)
@@ -376,6 +569,15 @@ class OrchestrationEngine:
                 lines.append(f"- **Worker Identity:** `{d.worker_id}`")
                 lines.append(f"- **Status:** `{d.status.value}`")
                 lines.append(f"- **Worktree:** `{d.worktree_path}`")
+                dmeta = d.metadata or {}
+                if dmeta.get("profile"):
+                    lines.append(f"- **AGY Profile:** `{dmeta['profile']}` (`{dmeta.get('profile_home', 'n/a')}`)")
+                if dmeta.get("conversation_id"):
+                    lines.append(f"- **Trace ID:** `{dmeta['conversation_id']}`")
+                if dmeta.get("trace_path"):
+                    lines.append(f"- **Trace File:** `{dmeta['trace_path']}`")
+                if dmeta.get("execution_id"):
+                    lines.append(f"- **Execution ID:** `{dmeta['execution_id']}`")
                 lines.append(f"- **Summary:** {d.result_summary or 'No summary recorded.'}")
                 lines.append("")
 
