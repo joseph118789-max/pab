@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from pab.cli.main import app
 from pab.core.config import ConfigManager
-from pab.core.exceptions import PABError
+from pab.core.exceptions import PABError, UnsupportedOperationError
 from pab.core.models.orchestration import (
     DispatchStatus,
     GateStatus,
@@ -96,7 +96,8 @@ def test_decision_gate_blocking_and_resolution(test_orch_engine: OrchestrationEn
     dispatch = test_orch_engine.dispatch_task(
         run_id=run.run_id,
         task_id=task.task_id,
-        agent_provider="openclaw",
+        agent_provider="agy",
+        worker_id="sales",
         dry_run=True,
     )
     assert dispatch.status == DispatchStatus.SETTLED
@@ -104,8 +105,11 @@ def test_decision_gate_blocking_and_resolution(test_orch_engine: OrchestrationEn
 
 def test_use_case_c_multi_reviewer_fan_out(test_orch_engine: OrchestrationEngine, tmp_path: Path):
     """
-    Use Case C: One task, multiple independent reviewers (Codex, Claude, Pi).
-    Executes parallel dispatches against the same Git commit and aggregates into synthesis report.
+    Use Case C: One task, multiple independent reviewers.
+
+    Only providers with a real execution implementation (AGY, Pi) may be dispatched.
+    Providers without an implementation fail explicitly instead of reporting a
+    fabricated success.
     """
     run = test_orch_engine.create_run(
         name="personaos-review",
@@ -117,19 +121,24 @@ def test_use_case_c_multi_reviewer_fan_out(test_orch_engine: OrchestrationEngine
     t_claude = test_orch_engine.create_task(run.run_id, "Architecture correctness", "Review architecture and lifecycle correctness")
     t_pi = test_orch_engine.create_task(run.run_id, "Code quality and failovers", "Review code quality and failure scenarios")
 
-    # Dispatch to all three in their respective worktrees
-    disp_codex = test_orch_engine.dispatch_task(
+    # Providers without an execution implementation fail explicitly.
+    for provider, task in (("codex", t_codex), ("claude", t_claude), ("openclaw", t_pi)):
+        with pytest.raises(UnsupportedOperationError):
+            test_orch_engine.dispatch_task(
+                run_id=run.run_id,
+                task_id=task.task_id,
+                agent_provider=provider,
+                worktree_path=tmp_path / f"wt-{provider}",
+                dry_run=True,
+            )
+
+    # Implemented dispatch targets succeed (dry run: plan only, task stays pending).
+    disp_agy = test_orch_engine.dispatch_task(
         run_id=run.run_id,
         task_id=t_codex.task_id,
-        agent_provider="codex",
-        worktree_path=tmp_path / "wt-codex",
-        dry_run=True,
-    )
-    disp_claude = test_orch_engine.dispatch_task(
-        run_id=run.run_id,
-        task_id=t_claude.task_id,
-        agent_provider="claude",
-        worktree_path=tmp_path / "wt-claude",
+        agent_provider="agy",
+        worker_id="sales",
+        worktree_path=tmp_path / "wt-agy",
         dry_run=True,
     )
     disp_pi = test_orch_engine.dispatch_task(
@@ -140,18 +149,16 @@ def test_use_case_c_multi_reviewer_fan_out(test_orch_engine: OrchestrationEngine
         dry_run=True,
     )
 
-    assert disp_codex.status == DispatchStatus.SETTLED
-    assert disp_claude.status == DispatchStatus.SETTLED
+    assert disp_agy.status == DispatchStatus.SETTLED
     assert disp_pi.status == DispatchStatus.SETTLED
 
     # Synthesize results
     report = test_orch_engine.get_run_results(run.run_id)
     assert report["total_tasks"] == 3
-    assert report["total_dispatches"] == 3
+    assert report["total_dispatches"] == 2
 
     md = report["report_markdown"]
-    assert "CODEX — Concurrency and DB safety" in md
-    assert "CLAUDE — Architecture correctness" in md
+    assert "AGY — Concurrency and DB safety" in md
     assert "PI — Code quality and failovers" in md
     assert "Review PersonaOS Step 11 implementation on commit abc123" in md
 
