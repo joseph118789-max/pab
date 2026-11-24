@@ -97,6 +97,28 @@ def test_command_places_output_format_before_print(fake_agy: Path, worker: AgyWo
     assert args.index("--print") < args.index("say hello")
 
 
+def test_build_command_includes_new_project_before_print():
+    runner = AgyRunner()
+    cmd = runner.build_command("say hello")
+    assert "--new-project" in cmd
+    assert cmd.index("--output-format") < cmd.index("--print")
+    assert cmd.index("--new-project") < cmd.index("--print")
+    assert cmd[-2:] == ["--print", "say hello"]
+
+
+def test_command_includes_new_project_flag(fake_agy: Path, worker: AgyWorkerProfile, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_MODE", "success")
+    runner = _runner(fake_agy, monkeypatch)
+    runner.run(worker, prompt="say hello", timeout=30)
+
+    log = (fake_agy.parent / "agy.log").read_text(encoding="utf-8")
+    args = log.strip().splitlines()[-1]
+    assert "--new-project" in args
+    assert args.index("--output-format") < args.index("--print")
+    assert args.index("--new-project") < args.index("--print")
+    assert args.index("--print") < args.index("say hello")
+
+
 def test_profile_home_is_exported_to_the_child_process(fake_agy: Path, worker: AgyWorkerProfile, monkeypatch):
     monkeypatch.setenv("FAKE_AGY_MODE", "success")
     runner = _runner(fake_agy, monkeypatch)
@@ -209,3 +231,33 @@ def test_missing_executable_is_a_failure(worker: AgyWorkerProfile, monkeypatch):
     result = runner.run(worker, prompt="hello", timeout=30)
     assert result.ok is False
     assert "executable not found" in (result.error or "")
+
+
+def test_worker_session_isolation_derives_isolated_key(fake_agy: Path, worker: AgyWorkerProfile, monkeypatch):
+    monkeypatch.setenv("FAKE_AGY_MODE", "success")
+    runner = _runner(fake_agy, monkeypatch)
+    result = runner.run(worker, prompt="hello", timeout=30)
+    assert result.ok is True
+    assert result.session_key == f"agent:{worker.worker_id}:worker:{result.conversation_id}"
+    assert result.session_key != "agent:main:main"
+    assert "main:main" not in result.session_key
+    assert result.to_dict()["session_key"] == result.session_key
+
+
+def test_worker_session_isolation_rejects_channel_session(fake_agy: Path, worker: AgyWorkerProfile, monkeypatch):
+    runner = _runner(fake_agy, monkeypatch)
+    with pytest.raises(ValueError) as exc:
+        runner.run(worker, prompt="hello", extra_env={"OPENCLAW_SESSION_KEY": "agent:main:main"})
+    assert "Worker execution rejected" in str(exc.value)
+    assert "agent:main:main" in str(exc.value)
+
+
+def test_worker_session_env_sanitization(fake_agy: Path, worker: AgyWorkerProfile, monkeypatch):
+    monkeypatch.setenv("OPENCLAW_SESSION_KEY", "agent:main:main")
+    monkeypatch.setenv("OPENCLAW_SESSION_ID", "4190d086-3073-4633-b277-4630f9b5b144")
+    monkeypatch.setenv("OPENCLAW_AGENT_ID", "main")
+    runner = _runner(fake_agy, monkeypatch)
+    env = runner.build_env(worker.profile_home)
+    assert "OPENCLAW_SESSION_KEY" not in env
+    assert "OPENCLAW_SESSION_ID" not in env
+    assert "OPENCLAW_AGENT_ID" not in env

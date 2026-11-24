@@ -41,6 +41,7 @@ class AgyExecutionResult:
     profile_home: str
     workdir: str
     conversation_id: Optional[str] = None
+    session_key: Optional[str] = None
     status: Optional[str] = None
     response: str = ""
     duration_seconds: float = 0.0
@@ -61,6 +62,7 @@ class AgyExecutionResult:
             "profile_home": self.profile_home,
             "workdir": self.workdir,
             "conversation_id": self.conversation_id,
+            "session_key": self.session_key,
             "status": self.status,
             "response": self.response,
             "duration_seconds": self.duration_seconds,
@@ -102,8 +104,15 @@ class AgyRunner:
 
         ``--output-format`` must precede ``--print``: ``--print`` swallows the next
         token as its prompt.
+        ``--new-project`` ensures every dispatch starts a fresh conversation in
+        the worker's workdir instead of resuming the profile's active conversation.
         """
-        cmd = [self.resolve_executable() or "agy", "--output-format", "json"]
+        cmd = [
+            self.resolve_executable() or "agy",
+            "--output-format",
+            "json",
+            "--new-project",
+        ]
         if self._skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         cmd.extend(["--print", prompt])
@@ -112,6 +121,11 @@ class AgyRunner:
     def build_env(self, profile_home: Path, extra_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """Build the child environment with the AGY profile HOME applied."""
         env = os.environ.copy()
+        # Session isolation: purge OpenClaw gateway session context to prevent session inheritance
+        for k in list(env.keys()):
+            if k.startswith("OPENCLAW_SESSION") or k in ("OPENCLAW_AGENT_ID", "OPENCLAW_MAIN_SESSION"):
+                env.pop(k, None)
+
         home = Path(profile_home).expanduser()
         env["HOME"] = str(home)
         env["GEMINI_CONFIG_DIR"] = str(home / ".gemini" / "config")
@@ -119,6 +133,16 @@ class AgyRunner:
         local_bin = str(Path.home() / ".local" / "bin")
         env["PATH"] = f"{local_bin}{os.pathsep}{env.get('PATH', '')}"
         if extra_env:
+            # Enforce that worker turns cannot be forced into channel-answerable sessions
+            target_session = extra_env.get("OPENCLAW_SESSION_KEY") or extra_env.get("PAB_SESSION_KEY")
+            if target_session and (
+                target_session == "agent:main:main"
+                or target_session.startswith("agent:main:")
+                or target_session.startswith("agent:whatsapp-observer:")
+            ):
+                raise ValueError(
+                    f"Worker execution rejected: targeting channel-answerable session '{target_session}' violates worker session isolation."
+                )
             env.update({str(k): str(v) for k, v in extra_env.items()})
         return env
 
@@ -240,6 +264,7 @@ class AgyRunner:
         status = payload.get("status")
         response = payload.get("response") or ""
         conversation_id = payload.get("conversation_id")
+        session_key = f"agent:{worker.worker_id}:worker:{conversation_id}" if conversation_id else None
 
         result = AgyExecutionResult(
             ok=True,
@@ -248,6 +273,7 @@ class AgyRunner:
             profile_home=str(profile_home),
             workdir=str(workdir),
             conversation_id=conversation_id,
+            session_key=session_key,
             status=status,
             response=response,
             duration_seconds=duration,

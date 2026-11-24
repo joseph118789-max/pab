@@ -258,3 +258,30 @@ def test_dry_run_does_not_complete_the_task(engine: OrchestrationEngine, agy_env
     assert dispatch.metadata["dry_run"] is True
     assert dispatch.metadata["plan"]["profile"] == "seekn"
     assert engine.get_task(task.task_id).status == TaskStatus.PENDING
+
+
+def test_adapter_launch_rejects_channel_session_metadata(agy_env):
+    adapter = agy_env["adapter"]
+    req = _launch_request(agy_env["workdir"])
+    req_blocked = LaunchRequest(
+        request_id=req.request_id,
+        idempotency_key=req.idempotency_key,
+        worker_id=req.worker_id,
+        task_id=req.task_id,
+        provider=req.provider,
+        workspace_path=req.workspace_path,
+        prompt=req.prompt,
+        metadata={"session_key": "agent:main:main"},
+    )
+    with pytest.raises(ValueError) as exc:
+        adapter.launch(req_blocked)
+    assert "Worker execution rejected" in str(exc.value)
+    assert "agent:main:main" in str(exc.value)
+
+
+def test_adapter_launch_records_isolated_session_key(agy_env):
+    adapter = agy_env["adapter"]
+    handle = adapter.launch(_launch_request(agy_env["workdir"]))
+    assert handle.status == ExecutionStatus.COMPLETED
+    assert handle.metadata["session_key"] == "agent:sales:worker:conv-abc"
+    assert handle.metadata["session_key"] != "agent:main:main"

@@ -100,6 +100,19 @@ class AgyAdapter(AgentAdapter):
         worker's isolated profile HOME. The returned handle reports COMPLETED only
         when AGY exited cleanly and returned a valid, traceable result.
         """
+        # Session isolation guard: prevent worker executions from targeting channel-answerable sessions
+        req_session = request.metadata.get("session_key") or (
+            request.environment.get("OPENCLAW_SESSION_KEY") if request.environment else None
+        )
+        if req_session and (
+            req_session == "agent:main:main"
+            or req_session.startswith("agent:main:")
+            or req_session.startswith("agent:whatsapp-observer:")
+        ):
+            raise ValueError(
+                f"Worker execution rejected: targeting channel-bound session '{req_session}' is prohibited."
+            )
+
         exec_id = f"exec-agy-{uuid.uuid4().hex[:10]}"
         now = datetime.now(timezone.utc)
 
@@ -119,6 +132,7 @@ class AgyAdapter(AgentAdapter):
         metadata = {
             **request.metadata,
             **result.to_dict(),
+            "session_key": result.session_key,
         }
 
         handle = ExecutionHandle(
